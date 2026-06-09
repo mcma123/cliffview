@@ -4,13 +4,20 @@ import type { ReactNode } from "react";
 import { CliffviewWordmark } from "./cliffview-logo";
 import { cn } from "@/lib/utils";
 
-const adminNav = [
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof BarChart3;
+  exact?: boolean;
+  ready?: boolean;
+};
+const adminNav: NavItem[] = [
   { to: "/academy/admin", label: "Overview", icon: BarChart3, exact: true, ready: true },
   { to: "#", label: "Staff", icon: Users },
   { to: "#", label: "Modules", icon: BookOpen },
   { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
   { to: "#", label: "Reports", icon: FileText },
-] as const;
+];
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -27,7 +34,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <nav className="flex-1 space-y-1 px-3 py-6">
           {adminNav.map((item) => {
             const active = item.ready
-              ? "exact" in item && item.exact
+              ? item.exact
                 ? pathname === item.to
                 : pathname.startsWith(item.to)
               : false;
@@ -49,7 +56,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </>
             );
             return item.ready ? (
-              <Link key={item.label} to={item.to} className={className}>
+              <Link key={item.label} to={item.to as "/academy/admin"} className={className}>
                 {inner}
               </Link>
             ) : (
