@@ -5,12 +5,12 @@ import { CliffviewWordmark } from "./cliffview-logo";
 import { cn } from "@/lib/utils";
 
 const adminNav = [
-  { to: "/academy/admin", label: "Overview", icon: BarChart3, exact: true },
-  { to: "/academy/admin/staff", label: "Staff", icon: Users },
-  { to: "/academy/admin/modules", label: "Modules", icon: BookOpen },
-  { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles },
-  { to: "/academy/admin/reports", label: "Reports", icon: FileText },
-];
+  { to: "/academy/admin", label: "Overview", icon: BarChart3, exact: true, ready: true },
+  { to: "#", label: "Staff", icon: Users },
+  { to: "#", label: "Modules", icon: BookOpen },
+  { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
+  { to: "#", label: "Reports", icon: FileText },
+] as const;
 
 export function AdminShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -26,21 +26,36 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex-1 space-y-1 px-3 py-6">
           {adminNav.map((item) => {
-            const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-gold"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent",
-                )}
-              >
+            const active = item.ready
+              ? "exact" in item && item.exact
+                ? pathname === item.to
+                : pathname.startsWith(item.to)
+              : false;
+            const className = cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              active
+                ? "bg-sidebar-accent text-gold"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent",
+            );
+            const inner = (
+              <>
                 <item.icon className="h-4 w-4" />
                 {item.label}
+                {!item.ready && (
+                  <span className="ml-auto text-[9px] uppercase tracking-wider text-sidebar-foreground/40">
+                    soon
+                  </span>
+                )}
+              </>
+            );
+            return item.ready ? (
+              <Link key={item.label} to={item.to} className={className}>
+                {inner}
               </Link>
+            ) : (
+              <a key={item.label} href={item.to} className={className} onClick={(e) => e.preventDefault()}>
+                {inner}
+              </a>
             );
           })}
         </nav>
