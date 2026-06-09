@@ -56,7 +56,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </>
             );
             return item.ready ? (
-              <Link key={item.label} to={item.to as "/academy/admin"} className={className}>
+              <Link key={item.label} to={item.to} className={className}>
                 {inner}
               </Link>
             ) : (
