@@ -12,6 +12,13 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
+const siteTitle = "Cliffview Academy";
+const siteDescription =
+  "Staff training and compliance portal for Cliffview Academy, with guided learning paths, module tracking, assessments, and admin oversight.";
+const siteUrl = import.meta.env.VITE_SITE_URL?.replace(/\/$/, "");
+const socialImagePath = "/og-image.svg";
+const socialImageUrl = siteUrl ? `${siteUrl}${socialImagePath}` : socialImagePath;
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -77,20 +84,28 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: siteTitle },
+      { name: "description", content: siteDescription },
+      { name: "application-name", content: siteTitle },
+      { property: "og:site_name", content: siteTitle },
+      { property: "og:title", content: siteTitle },
+      { property: "og:description", content: siteDescription },
       { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
+      { property: "og:image", content: socialImageUrl },
+      { property: "og:image:alt", content: `${siteTitle} preview card` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: siteTitle },
+      { name: "twitter:description", content: siteDescription },
+      { name: "twitter:image", content: socialImageUrl },
+      { name: "twitter:image:alt", content: `${siteTitle} preview card` },
+      ...(siteUrl ? [{ property: "og:url", content: siteUrl }] : []),
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
+      ...(siteUrl ? [{ rel: "canonical", href: siteUrl }] : []),
     ],
   }),
   shellComponent: RootShell,

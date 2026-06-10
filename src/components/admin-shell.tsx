@@ -14,7 +14,7 @@ type NavItem = {
 const adminNav: NavItem[] = [
   { to: "/academy/admin", label: "Overview", icon: BarChart3, exact: true, ready: true },
   { to: "#", label: "Staff", icon: Users },
-  { to: "#", label: "Modules", icon: BookOpen },
+  { to: "/academy/admin/modules", label: "Modules", icon: BookOpen, ready: true },
   { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
   { to: "#", label: "Reports", icon: FileText },
 ];
@@ -60,7 +60,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 {inner}
               </Link>
             ) : (
-              <a key={item.label} href={item.to} className={className} onClick={(e) => e.preventDefault()}>
+              <a
+                key={item.label}
+                href={item.to}
+                className={className}
+                onClick={(e) => e.preventDefault()}
+              >
                 {inner}
               </a>
             );
@@ -79,7 +84,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="lg:pl-64">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur lg:px-8">
           <div className="flex-1">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">SMT Admin Console</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              SMT Admin Console
+            </p>
             <h1 className="text-base font-semibold text-foreground">Cliffview Academy</h1>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gold text-sm font-bold text-primary-deep">

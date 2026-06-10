@@ -17,10 +17,17 @@ import { Route as AcademyLeaderboardRouteImport } from './routes/academy.leaderb
 import { Route as AcademyDashboardRouteImport } from './routes/academy.dashboard'
 import { Route as AcademyAdminRouteImport } from './routes/academy.admin'
 import { Route as AcademyModulesSocialMediaAwarenessRouteImport } from './routes/academy.modules.social-media-awareness'
+import { Route as AcademyModulesModuleSlugRouteImport } from './routes/academy.modules.$moduleSlug'
+import { Route as AcademyAdminModulesRouteImport } from './routes/academy.admin.modules'
 import { Route as AcademyAdminAiReviewRouteImport } from './routes/academy.admin.ai-review'
 import { Route as AcademyModulesSocialMediaSection3RouteImport } from './routes/academy.modules.social-media.section-3'
 import { Route as AcademyModulesSocialMediaCompleteRouteImport } from './routes/academy.modules.social-media.complete'
 import { Route as AcademyModulesSocialMediaAssessmentRouteImport } from './routes/academy.modules.social-media.assessment'
+import { Route as AcademyAdminModulesCreateRouteImport } from './routes/academy.admin.modules.create'
+import { Route as AcademyAdminModulesModuleSlugRouteImport } from './routes/academy.admin.modules.$moduleSlug'
+import { Route as AcademyModulesModuleSlugLessonLessonIdRouteImport } from './routes/academy.modules.$moduleSlug.lesson.$lessonId'
+import { Route as AcademyAdminModulesModuleSlugLessonsLessonIdRouteImport } from './routes/academy.admin.modules.$moduleSlug.lessons.$lessonId'
+import { Route as AcademyAdminModulesModuleSlugAssetsAssetIdRouteImport } from './routes/academy.admin.modules.$moduleSlug.assets.$assetId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -63,6 +70,17 @@ const AcademyModulesSocialMediaAwarenessRoute =
     path: '/social-media-awareness',
     getParentRoute: () => AcademyModulesRoute,
   } as any)
+const AcademyModulesModuleSlugRoute =
+  AcademyModulesModuleSlugRouteImport.update({
+    id: '/$moduleSlug',
+    path: '/$moduleSlug',
+    getParentRoute: () => AcademyModulesRoute,
+  } as any)
+const AcademyAdminModulesRoute = AcademyAdminModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
+  getParentRoute: () => AcademyAdminRoute,
+} as any)
 const AcademyAdminAiReviewRoute = AcademyAdminAiReviewRouteImport.update({
   id: '/ai-review',
   path: '/ai-review',
@@ -86,6 +104,36 @@ const AcademyModulesSocialMediaAssessmentRoute =
     path: '/social-media/assessment',
     getParentRoute: () => AcademyModulesRoute,
   } as any)
+const AcademyAdminModulesCreateRoute =
+  AcademyAdminModulesCreateRouteImport.update({
+    id: '/create',
+    path: '/create',
+    getParentRoute: () => AcademyAdminModulesRoute,
+  } as any)
+const AcademyAdminModulesModuleSlugRoute =
+  AcademyAdminModulesModuleSlugRouteImport.update({
+    id: '/$moduleSlug',
+    path: '/$moduleSlug',
+    getParentRoute: () => AcademyAdminModulesRoute,
+  } as any)
+const AcademyModulesModuleSlugLessonLessonIdRoute =
+  AcademyModulesModuleSlugLessonLessonIdRouteImport.update({
+    id: '/lesson/$lessonId',
+    path: '/lesson/$lessonId',
+    getParentRoute: () => AcademyModulesModuleSlugRoute,
+  } as any)
+const AcademyAdminModulesModuleSlugLessonsLessonIdRoute =
+  AcademyAdminModulesModuleSlugLessonsLessonIdRouteImport.update({
+    id: '/lessons/$lessonId',
+    path: '/lessons/$lessonId',
+    getParentRoute: () => AcademyAdminModulesModuleSlugRoute,
+  } as any)
+const AcademyAdminModulesModuleSlugAssetsAssetIdRoute =
+  AcademyAdminModulesModuleSlugAssetsAssetIdRouteImport.update({
+    id: '/assets/$assetId',
+    path: '/assets/$assetId',
+    getParentRoute: () => AcademyAdminModulesModuleSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,10 +144,17 @@ export interface FileRoutesByFullPath {
   '/academy/profile': typeof AcademyProfileRoute
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
+  '/academy/admin/modules': typeof AcademyAdminModulesRouteWithChildren
+  '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugRouteWithChildren
   '/academy/modules/social-media-awareness': typeof AcademyModulesSocialMediaAwarenessRoute
+  '/academy/admin/modules/$moduleSlug': typeof AcademyAdminModulesModuleSlugRouteWithChildren
+  '/academy/admin/modules/create': typeof AcademyAdminModulesCreateRoute
   '/academy/modules/social-media/assessment': typeof AcademyModulesSocialMediaAssessmentRoute
   '/academy/modules/social-media/complete': typeof AcademyModulesSocialMediaCompleteRoute
   '/academy/modules/social-media/section-3': typeof AcademyModulesSocialMediaSection3Route
+  '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
+  '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
+  '/academy/admin/modules/$moduleSlug/lessons/$lessonId': typeof AcademyAdminModulesModuleSlugLessonsLessonIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,10 +165,17 @@ export interface FileRoutesByTo {
   '/academy/profile': typeof AcademyProfileRoute
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
+  '/academy/admin/modules': typeof AcademyAdminModulesRouteWithChildren
+  '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugRouteWithChildren
   '/academy/modules/social-media-awareness': typeof AcademyModulesSocialMediaAwarenessRoute
+  '/academy/admin/modules/$moduleSlug': typeof AcademyAdminModulesModuleSlugRouteWithChildren
+  '/academy/admin/modules/create': typeof AcademyAdminModulesCreateRoute
   '/academy/modules/social-media/assessment': typeof AcademyModulesSocialMediaAssessmentRoute
   '/academy/modules/social-media/complete': typeof AcademyModulesSocialMediaCompleteRoute
   '/academy/modules/social-media/section-3': typeof AcademyModulesSocialMediaSection3Route
+  '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
+  '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
+  '/academy/admin/modules/$moduleSlug/lessons/$lessonId': typeof AcademyAdminModulesModuleSlugLessonsLessonIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,10 +187,17 @@ export interface FileRoutesById {
   '/academy/profile': typeof AcademyProfileRoute
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
+  '/academy/admin/modules': typeof AcademyAdminModulesRouteWithChildren
+  '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugRouteWithChildren
   '/academy/modules/social-media-awareness': typeof AcademyModulesSocialMediaAwarenessRoute
+  '/academy/admin/modules/$moduleSlug': typeof AcademyAdminModulesModuleSlugRouteWithChildren
+  '/academy/admin/modules/create': typeof AcademyAdminModulesCreateRoute
   '/academy/modules/social-media/assessment': typeof AcademyModulesSocialMediaAssessmentRoute
   '/academy/modules/social-media/complete': typeof AcademyModulesSocialMediaCompleteRoute
   '/academy/modules/social-media/section-3': typeof AcademyModulesSocialMediaSection3Route
+  '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
+  '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
+  '/academy/admin/modules/$moduleSlug/lessons/$lessonId': typeof AcademyAdminModulesModuleSlugLessonsLessonIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,10 +210,17 @@ export interface FileRouteTypes {
     | '/academy/profile'
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
+    | '/academy/admin/modules'
+    | '/academy/modules/$moduleSlug'
     | '/academy/modules/social-media-awareness'
+    | '/academy/admin/modules/$moduleSlug'
+    | '/academy/admin/modules/create'
     | '/academy/modules/social-media/assessment'
     | '/academy/modules/social-media/complete'
     | '/academy/modules/social-media/section-3'
+    | '/academy/modules/$moduleSlug/lesson/$lessonId'
+    | '/academy/admin/modules/$moduleSlug/assets/$assetId'
+    | '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,10 +231,17 @@ export interface FileRouteTypes {
     | '/academy/profile'
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
+    | '/academy/admin/modules'
+    | '/academy/modules/$moduleSlug'
     | '/academy/modules/social-media-awareness'
+    | '/academy/admin/modules/$moduleSlug'
+    | '/academy/admin/modules/create'
     | '/academy/modules/social-media/assessment'
     | '/academy/modules/social-media/complete'
     | '/academy/modules/social-media/section-3'
+    | '/academy/modules/$moduleSlug/lesson/$lessonId'
+    | '/academy/admin/modules/$moduleSlug/assets/$assetId'
+    | '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
   id:
     | '__root__'
     | '/'
@@ -169,10 +252,17 @@ export interface FileRouteTypes {
     | '/academy/profile'
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
+    | '/academy/admin/modules'
+    | '/academy/modules/$moduleSlug'
     | '/academy/modules/social-media-awareness'
+    | '/academy/admin/modules/$moduleSlug'
+    | '/academy/admin/modules/create'
     | '/academy/modules/social-media/assessment'
     | '/academy/modules/social-media/complete'
     | '/academy/modules/social-media/section-3'
+    | '/academy/modules/$moduleSlug/lesson/$lessonId'
+    | '/academy/admin/modules/$moduleSlug/assets/$assetId'
+    | '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -243,6 +333,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcademyModulesSocialMediaAwarenessRouteImport
       parentRoute: typeof AcademyModulesRoute
     }
+    '/academy/modules/$moduleSlug': {
+      id: '/academy/modules/$moduleSlug'
+      path: '/$moduleSlug'
+      fullPath: '/academy/modules/$moduleSlug'
+      preLoaderRoute: typeof AcademyModulesModuleSlugRouteImport
+      parentRoute: typeof AcademyModulesRoute
+    }
+    '/academy/admin/modules': {
+      id: '/academy/admin/modules'
+      path: '/modules'
+      fullPath: '/academy/admin/modules'
+      preLoaderRoute: typeof AcademyAdminModulesRouteImport
+      parentRoute: typeof AcademyAdminRoute
+    }
     '/academy/admin/ai-review': {
       id: '/academy/admin/ai-review'
       path: '/ai-review'
@@ -271,22 +375,107 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcademyModulesSocialMediaAssessmentRouteImport
       parentRoute: typeof AcademyModulesRoute
     }
+    '/academy/admin/modules/create': {
+      id: '/academy/admin/modules/create'
+      path: '/create'
+      fullPath: '/academy/admin/modules/create'
+      preLoaderRoute: typeof AcademyAdminModulesCreateRouteImport
+      parentRoute: typeof AcademyAdminModulesRoute
+    }
+    '/academy/admin/modules/$moduleSlug': {
+      id: '/academy/admin/modules/$moduleSlug'
+      path: '/$moduleSlug'
+      fullPath: '/academy/admin/modules/$moduleSlug'
+      preLoaderRoute: typeof AcademyAdminModulesModuleSlugRouteImport
+      parentRoute: typeof AcademyAdminModulesRoute
+    }
+    '/academy/modules/$moduleSlug/lesson/$lessonId': {
+      id: '/academy/modules/$moduleSlug/lesson/$lessonId'
+      path: '/lesson/$lessonId'
+      fullPath: '/academy/modules/$moduleSlug/lesson/$lessonId'
+      preLoaderRoute: typeof AcademyModulesModuleSlugLessonLessonIdRouteImport
+      parentRoute: typeof AcademyModulesModuleSlugRoute
+    }
+    '/academy/admin/modules/$moduleSlug/lessons/$lessonId': {
+      id: '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
+      path: '/lessons/$lessonId'
+      fullPath: '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
+      preLoaderRoute: typeof AcademyAdminModulesModuleSlugLessonsLessonIdRouteImport
+      parentRoute: typeof AcademyAdminModulesModuleSlugRoute
+    }
+    '/academy/admin/modules/$moduleSlug/assets/$assetId': {
+      id: '/academy/admin/modules/$moduleSlug/assets/$assetId'
+      path: '/assets/$assetId'
+      fullPath: '/academy/admin/modules/$moduleSlug/assets/$assetId'
+      preLoaderRoute: typeof AcademyAdminModulesModuleSlugAssetsAssetIdRouteImport
+      parentRoute: typeof AcademyAdminModulesModuleSlugRoute
+    }
   }
 }
 
+interface AcademyAdminModulesModuleSlugRouteChildren {
+  AcademyAdminModulesModuleSlugAssetsAssetIdRoute: typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
+  AcademyAdminModulesModuleSlugLessonsLessonIdRoute: typeof AcademyAdminModulesModuleSlugLessonsLessonIdRoute
+}
+
+const AcademyAdminModulesModuleSlugRouteChildren: AcademyAdminModulesModuleSlugRouteChildren =
+  {
+    AcademyAdminModulesModuleSlugAssetsAssetIdRoute:
+      AcademyAdminModulesModuleSlugAssetsAssetIdRoute,
+    AcademyAdminModulesModuleSlugLessonsLessonIdRoute:
+      AcademyAdminModulesModuleSlugLessonsLessonIdRoute,
+  }
+
+const AcademyAdminModulesModuleSlugRouteWithChildren =
+  AcademyAdminModulesModuleSlugRoute._addFileChildren(
+    AcademyAdminModulesModuleSlugRouteChildren,
+  )
+
+interface AcademyAdminModulesRouteChildren {
+  AcademyAdminModulesModuleSlugRoute: typeof AcademyAdminModulesModuleSlugRouteWithChildren
+  AcademyAdminModulesCreateRoute: typeof AcademyAdminModulesCreateRoute
+}
+
+const AcademyAdminModulesRouteChildren: AcademyAdminModulesRouteChildren = {
+  AcademyAdminModulesModuleSlugRoute:
+    AcademyAdminModulesModuleSlugRouteWithChildren,
+  AcademyAdminModulesCreateRoute: AcademyAdminModulesCreateRoute,
+}
+
+const AcademyAdminModulesRouteWithChildren =
+  AcademyAdminModulesRoute._addFileChildren(AcademyAdminModulesRouteChildren)
+
 interface AcademyAdminRouteChildren {
   AcademyAdminAiReviewRoute: typeof AcademyAdminAiReviewRoute
+  AcademyAdminModulesRoute: typeof AcademyAdminModulesRouteWithChildren
 }
 
 const AcademyAdminRouteChildren: AcademyAdminRouteChildren = {
   AcademyAdminAiReviewRoute: AcademyAdminAiReviewRoute,
+  AcademyAdminModulesRoute: AcademyAdminModulesRouteWithChildren,
 }
 
 const AcademyAdminRouteWithChildren = AcademyAdminRoute._addFileChildren(
   AcademyAdminRouteChildren,
 )
 
+interface AcademyModulesModuleSlugRouteChildren {
+  AcademyModulesModuleSlugLessonLessonIdRoute: typeof AcademyModulesModuleSlugLessonLessonIdRoute
+}
+
+const AcademyModulesModuleSlugRouteChildren: AcademyModulesModuleSlugRouteChildren =
+  {
+    AcademyModulesModuleSlugLessonLessonIdRoute:
+      AcademyModulesModuleSlugLessonLessonIdRoute,
+  }
+
+const AcademyModulesModuleSlugRouteWithChildren =
+  AcademyModulesModuleSlugRoute._addFileChildren(
+    AcademyModulesModuleSlugRouteChildren,
+  )
+
 interface AcademyModulesRouteChildren {
+  AcademyModulesModuleSlugRoute: typeof AcademyModulesModuleSlugRouteWithChildren
   AcademyModulesSocialMediaAwarenessRoute: typeof AcademyModulesSocialMediaAwarenessRoute
   AcademyModulesSocialMediaAssessmentRoute: typeof AcademyModulesSocialMediaAssessmentRoute
   AcademyModulesSocialMediaCompleteRoute: typeof AcademyModulesSocialMediaCompleteRoute
@@ -294,6 +483,7 @@ interface AcademyModulesRouteChildren {
 }
 
 const AcademyModulesRouteChildren: AcademyModulesRouteChildren = {
+  AcademyModulesModuleSlugRoute: AcademyModulesModuleSlugRouteWithChildren,
   AcademyModulesSocialMediaAwarenessRoute:
     AcademyModulesSocialMediaAwarenessRoute,
   AcademyModulesSocialMediaAssessmentRoute:
@@ -320,3 +510,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
