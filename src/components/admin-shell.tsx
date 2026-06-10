@@ -13,7 +13,7 @@ type NavItem = {
 };
 const adminNav: NavItem[] = [
   { to: "/academy/admin", label: "Overview", icon: BarChart3, exact: true, ready: true },
-  { to: "#", label: "Staff", icon: Users },
+  { to: "/academy/admin/staff", label: "Staff", icon: Users, ready: true },
   { to: "/academy/admin/modules", label: "Modules", icon: BookOpen, ready: true },
   { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
   { to: "#", label: "Reports", icon: FileText },

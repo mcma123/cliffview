@@ -4,15 +4,11 @@ export function CliffviewShield({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex h-12 w-12 items-center justify-center rounded-md bg-gold text-primary-deep shadow-md",
+        "flex h-12 w-12 items-center justify-center rounded-md overflow-hidden bg-transparent shadow-sm",
         className,
       )}
     >
-      <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2 4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z" fill="currentColor" opacity="0.15" />
-        <path d="M12 2 4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z" />
-        <path d="M9 11l3-4 3 4-3 6-3-6z" fill="currentColor" />
-      </svg>
+      <img src="/logo.jpg" alt="Cliffview Academy Logo" className="h-full w-full object-contain" />
     </div>
   );
 }

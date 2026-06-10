@@ -5,6 +5,8 @@ import {
   getAdminModuleDetail,
   getAdminModuleLibrary,
   getAdminOverview,
+  getAdminStaffDirectory,
+  getAdminStaffDetail,
   getAiReviewQueue,
   getModuleExperience,
   getModuleLessonExperience,
@@ -30,6 +32,8 @@ export const academyQueries = {
     getAdminLessonDetail(academyRepository, slug, lessonId),
   getAdminAssetDetail: (slug: string, assetId: string) =>
     getAdminAssetDetail(academyRepository, slug, assetId),
+  getAdminStaffDirectory: () => getAdminStaffDirectory(academyRepository),
+  getAdminStaffDetail: (staffId: string) => getAdminStaffDetail(academyRepository, staffId),
   getAiReviewQueue: () => getAiReviewQueue(academyRepository),
 };
 

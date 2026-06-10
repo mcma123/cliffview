@@ -534,3 +534,59 @@ export function applyAiReviewDecision(
     [questionId]: decision,
   };
 }
+
+export function getAdminStaffDirectory(repo: AcademyRepository) {
+  const staffProfiles = repo.listAdminStaffProfiles();
+  const totalStaff = staffProfiles.length;
+  const avgCompliance = totalStaff > 0 
+    ? Math.round(staffProfiles.reduce((acc, curr) => acc + curr.compliancePercent, 0) / totalStaff)
+    : 0;
+  
+  const highPerformers = staffProfiles.filter(s => s.compliancePercent >= 80).length;
+
+  return {
+    summary: {
+      totalStaff,
+      avgCompliance,
+      highPerformers,
+    },
+    directory: staffProfiles.map(staff => ({
+      id: staff.id,
+      name: `${staff.firstName} ${staff.lastName}`,
+      role: staff.role,
+      phase: staff.phase,
+      compliancePercent: staff.compliancePercent,
+      completedModulesCount: staff.completedModulesCount,
+      totalAssignedModules: staff.totalAssignedModules,
+      cptdPoints: staff.cptdPoints,
+      recentActivityLabel: staff.recentActivityLabel,
+      href: `/academy/admin/staff/${staff.id}`,
+    }))
+  };
+}
+
+export function getAdminStaffDetail(repo: AcademyRepository, staffId: string) {
+  const staff = repo.getAdminStaffProfileById(staffId);
+  if (!staff) {
+    throw new Error(`Staff not found with ID "${staffId}"`);
+  }
+
+  return {
+    id: staff.id,
+    name: `${staff.firstName} ${staff.lastName}`,
+    role: staff.role,
+    phase: staff.phase,
+    initials: `${staff.firstName[0]}${staff.lastName.replace("Ms. ", "").replace("Mr. ", "").replace("Mrs. ", "")[0]}`.toUpperCase(),
+    compliancePercent: staff.compliancePercent,
+    stats: [
+      { label: "Modules Completed", value: `${staff.completedModulesCount} / ${staff.totalAssignedModules}` },
+      { label: "CPTD Points", value: `${staff.cptdPoints} pts` },
+      { label: "Total XP", value: `${staff.xpTotal}` },
+      { label: "Last Active", value: staff.recentActivityLabel },
+    ],
+    modules: staff.modules.map(mod => ({
+      ...mod,
+      href: `/academy/admin/modules/${mod.moduleSlug}`
+    }))
+  };
+}

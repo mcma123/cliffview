@@ -195,28 +195,28 @@ export function AcademyModuleDetailView({ data }: { data: ModuleExperienceViewMo
                     <li key={lesson.id}>
                       <Link
                         to={lesson.href}
-                        className={`flex items-start gap-4 rounded-2xl border p-4 transition-all ${
+                        className={`group flex items-start gap-4 rounded-3xl border p-5 transition-all duration-300 ease-in-out ${
                           lesson.isCurrent
-                            ? "border-primary bg-primary-soft shadow-sm"
+                            ? "border-primary bg-primary-soft shadow-md hover:-translate-y-0.5 hover:shadow-lg"
                             : lesson.kind === "assessment"
-                              ? "border-gold/40 bg-gold-soft/30"
-                              : "border-border bg-card hover:border-primary/50 hover:bg-muted/20"
+                              ? "border-gold/40 bg-gold-soft/30 hover:-translate-y-0.5 hover:border-gold hover:shadow-md"
+                              : "border-border bg-card hover:-translate-y-0.5 hover:border-primary/50 hover:bg-gradient-to-br hover:from-card hover:to-primary/5 hover:shadow-md"
                         }`}
                       >
                         <div
-                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${
                             lesson.kind === "assessment"
-                              ? "bg-gold text-primary-deep"
+                              ? "bg-gold text-primary-deep group-hover:bg-[#f2cb58]"
                               : lesson.isCurrent
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-foreground"
+                                ? "bg-primary text-primary-foreground group-hover:bg-primary-deep"
+                                : "bg-muted text-foreground group-hover:bg-primary-soft group-hover:text-primary"
                           }`}
                         >
                           <Icon className="h-5 w-5" />
                         </div>
                         <div className="flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <h3 className="text-lg font-semibold text-foreground">
+                            <h3 className="text-lg font-semibold text-foreground transition-colors group-hover:text-primary">
                               {lesson.title}
                             </h3>
                             {lesson.isCurrent && (
@@ -232,7 +232,13 @@ export function AcademyModuleDetailView({ data }: { data: ModuleExperienceViewMo
                           </div>
                           <p className="mt-1 text-sm text-muted-foreground">{lesson.meta}</p>
                         </div>
-                        <ArrowRight className="mt-1 h-5 w-5 text-muted-foreground" />
+                        <ArrowRight
+                          className={`mt-1 h-5 w-5 transition-transform duration-300 ${
+                            lesson.isCurrent
+                              ? "text-primary"
+                              : "text-muted-foreground group-hover:translate-x-1 group-hover:text-primary"
+                          }`}
+                        />
                       </Link>
                     </li>
                   );
@@ -289,16 +295,18 @@ export function AcademyModuleDetailView({ data }: { data: ModuleExperienceViewMo
                 {data.resources.map((resource) => (
                   <div
                     key={resource.title}
-                    className="rounded-2xl border border-border bg-background p-4"
+                    className="group rounded-3xl border border-border bg-background p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h3 className="font-semibold text-foreground">{resource.title}</h3>
+                        <h3 className="font-semibold text-foreground transition-colors group-hover:text-primary">
+                          {resource.title}
+                        </h3>
                         <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
                           {resource.kind} · {resource.meta}
                         </p>
                       </div>
-                      <FileText className="h-5 w-5 text-primary" />
+                      <FileText className="h-5 w-5 text-primary transition-transform duration-300 group-hover:scale-110 group-hover:text-primary-deep" />
                     </div>
                     <p className="mt-3 text-sm text-muted-foreground">{resource.description}</p>
                   </div>

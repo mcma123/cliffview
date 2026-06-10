@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { academyQueries } from "@/infrastructure/academy/container";
-import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video } from "lucide-react";
+import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video, Save } from "lucide-react";
+import { DragAndDropZone } from "@/components/drag-and-drop-zone";
+import { AttachContentDialog } from "@/components/attach-content-dialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons/$lessonId")({
   head: () => ({ meta: [{ title: "Lesson Editor · Cliffview Academy" }] }),
@@ -32,12 +35,20 @@ function AdminLessonEditor() {
               copy.
             </p>
           </div>
-          <Link
-            to={data.previewPath}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
-          >
-            <Eye className="h-4 w-4" /> Preview lesson
-          </Link>
+          <div className="flex gap-3">
+            <Link
+              to={data.previewPath}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted"
+            >
+              <Eye className="h-4 w-4" /> Preview
+            </Link>
+            <button
+              onClick={() => toast.success("Lesson content saved successfully")}
+              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
+            >
+              <Save className="h-4 w-4" /> Save changes
+            </button>
+          </div>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -114,39 +125,29 @@ function AdminLessonEditor() {
           <div className="space-y-6">
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
-                Media placeholder
+                Hero media
               </p>
-              <div className="mt-5 rounded-2xl border border-dashed border-border bg-background p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-                    {data.kind === "audio" ? (
-                      <Headphones className="h-6 w-6" />
-                    ) : (
-                      <Video className="h-6 w-6" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{data.mediaTitle}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">{data.mediaDescription}</p>
-                    <button className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                      <Upload className="h-4 w-4" /> Replace placeholder
-                    </button>
-                  </div>
-                </div>
+              <div className="mt-5">
+                <DragAndDropZone
+                  title={data.mediaTitle}
+                  description={data.mediaDescription}
+                  icon={data.kind === "audio" ? Headphones : Video}
+                  onUpload={() => toast.success("Hero media updated successfully")}
+                />
               </div>
             </section>
 
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Upload zones</p>
               <div className="mt-5 space-y-3">
-                {data.uploadZones.map((zone) => (
-                  <div
+                {data.uploadZones.map((zone: any) => (
+                  <DragAndDropZone
                     key={zone.title}
-                    className="rounded-2xl border border-dashed border-border bg-background p-5"
-                  >
-                    <h3 className="font-semibold text-foreground">{zone.title}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">{zone.description}</p>
-                  </div>
+                    title={zone.title}
+                    description={zone.description}
+                    icon={Upload}
+                    onUpload={() => toast.success(`${zone.title} uploaded successfully`)}
+                  />
                 ))}
               </div>
             </section>
@@ -163,9 +164,11 @@ function AdminLessonEditor() {
                 Documents and supporting files
               </h2>
             </div>
-            <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
-              <Plus className="h-4 w-4" /> Add resource
-            </button>
+            <AttachContentDialog defaultTitle={data.lessonTitle}>
+              <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
+                <Plus className="h-4 w-4" /> Add resource
+              </button>
+            </AttachContentDialog>
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

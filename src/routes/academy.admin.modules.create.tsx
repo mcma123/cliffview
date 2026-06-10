@@ -1,7 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import {
   ArrowRight,
+  BookOpen,
   FileText,
   Headphones,
   LayoutTemplate,
@@ -10,34 +12,17 @@ import {
   Upload,
   Video,
 } from "lucide-react";
+import { DragAndDropZone } from "@/components/drag-and-drop-zone";
+import { AddLessonDialog } from "@/components/add-lesson-dialog";
+import { AddObjectiveDialog } from "@/components/add-objective-dialog";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/create")({
   head: () => ({ meta: [{ title: "Create Module · Cliffview Academy" }] }),
   component: CreateModulePage,
 });
 
-const lessonDrafts = [
-  {
-    title: "Message triage",
-    meta: "Video placeholder · 6 min",
-    description: "Sort incoming parent messages by urgency, channel, and escalation risk.",
-  },
-  {
-    title: "Response language",
-    meta: "Reading + examples · 8 min",
-    description: "Write responses using approved school wording and calm escalation boundaries.",
-  },
-  {
-    title: "Meeting preparation",
-    meta: "Case-study placeholder · 7 min",
-    description: "Prepare facts, participants, and meeting notes before a difficult conversation.",
-  },
-  {
-    title: "Module assessment",
-    meta: "Quiz placeholder",
-    description: "Five-question sign-off before the learner can mark the module complete.",
-  },
-];
+// Removed mock lessonDrafts
 
 const assetDrafts = [
   {
@@ -58,6 +43,10 @@ const assetDrafts = [
 ];
 
 function CreateModulePage() {
+  const navigate = useNavigate();
+  const [objectives, setObjectives] = useState<string[]>([]);
+  const [lessons, setLessons] = useState<{ title: string; meta: string; description: string; kind: string }[]>([]);
+
   return (
     <AdminShell>
       <div className="mx-auto max-w-7xl space-y-6">
@@ -102,17 +91,20 @@ function CreateModulePage() {
                   Module name
                 </span>
                 <input
-                  defaultValue="Parent Communication Protocol"
-                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none ring-0"
+                  placeholder="e.g. Parent Communication Protocol"
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none ring-0 focus:border-primary"
                 />
               </label>
               <label className="space-y-2">
                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Category
                 </span>
-                <div className="rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground">
-                  Staff Development
-                </div>
+                <select className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground focus:border-primary outline-none">
+                  <option>Staff Development</option>
+                  <option>Compliance & Safety</option>
+                  <option>Teaching Methodologies</option>
+                  <option>Core Policies</option>
+                </select>
               </label>
             </div>
 
@@ -122,8 +114,8 @@ function CreateModulePage() {
                   Audience
                 </span>
                 <textarea
-                  defaultValue="Teachers, grade leads, front office staff, and pastoral teams"
-                  className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                  placeholder="e.g. Teachers, grade leads, front office staff..."
+                  className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                 />
               </label>
               <label className="space-y-2">
@@ -131,8 +123,8 @@ function CreateModulePage() {
                   Outcome
                 </span>
                 <textarea
-                  defaultValue="Give staff a clear communication structure so parent interactions stay calm, documented, and aligned with school expectations."
-                  className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                  placeholder="e.g. Give staff a clear communication structure..."
+                  className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                 />
               </label>
             </div>
@@ -142,8 +134,8 @@ function CreateModulePage() {
                 Learner-facing description
               </span>
               <textarea
-                defaultValue="A practical communication module for handling sensitive parent messages, escalations, and follow-up documentation across email, WhatsApp, and meetings."
-                className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                placeholder="A practical communication module for handling sensitive parent messages..."
+                className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
               />
             </label>
 
@@ -157,24 +149,28 @@ function CreateModulePage() {
                     These will appear as learner-side outcome cards.
                   </p>
                 </div>
-                <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                  <Plus className="h-4 w-4" /> Add objective
-                </button>
+                <AddObjectiveDialog onAddObjective={(obj) => setObjectives((prev) => [...prev, obj])}>
+                  <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
+                    <Plus className="h-4 w-4" /> Add objective
+                  </button>
+                </AddObjectiveDialog>
               </div>
 
               <div className="mt-5 space-y-3">
-                {[
-                  "Identify when to acknowledge, escalate, or move a parent conversation offline.",
-                  "Use school-approved language when responding to emotional or high-risk messages.",
-                  "Attach the right supporting documents and meeting notes after each interaction.",
-                ].map((objective) => (
-                  <div
-                    key={objective}
-                    className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground"
-                  >
-                    {objective}
+                {objectives.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+                    No learning objectives added yet. Click "Add objective" to define one.
                   </div>
-                ))}
+                ) : (
+                  objectives.map((objective, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground"
+                    >
+                      {objective}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -186,23 +182,12 @@ function CreateModulePage() {
               </p>
               <div className="mt-5 space-y-3">
                 {assetDrafts.map((asset) => (
-                  <div
+                  <DragAndDropZone
                     key={asset.title}
-                    className="rounded-2xl border border-dashed border-border bg-background p-5"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-                        <asset.icon className="h-5 w-5" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-foreground">{asset.title}</h3>
-                        <p className="mt-2 text-sm text-muted-foreground">{asset.description}</p>
-                        <button className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                          <Upload className="h-4 w-4" /> Choose file
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                    title={asset.title}
+                    description={asset.description}
+                    icon={asset.icon}
+                  />
                 ))}
               </div>
             </div>
@@ -235,51 +220,71 @@ function CreateModulePage() {
               </p>
               <h2 className="mt-2 text-2xl font-bold text-foreground">Design the module journey</h2>
             </div>
-            <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
-              <Plus className="h-4 w-4" /> Add lesson
-            </button>
+            <AddLessonDialog onAddLesson={(lesson) => setLessons((prev) => [...prev, lesson])}>
+              <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
+                <Plus className="h-4 w-4" /> Add lesson
+              </button>
+            </AddLessonDialog>
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {lessonDrafts.map((lesson, index) => (
-              <div
-                key={lesson.title}
-                className="rounded-2xl border border-border bg-background p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                      Lesson {index + 1}
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-foreground">{lesson.title}</h3>
-                    <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
-                      {lesson.meta}
-                    </p>
-                  </div>
-                  <button className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                    Edit
-                  </button>
+            {lessons.length === 0 ? (
+              <div className="col-span-full rounded-3xl border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-background shadow-sm">
+                  <BookOpen className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <p className="mt-4 text-sm text-muted-foreground">{lesson.description}</p>
+                <h3 className="mt-4 font-semibold text-foreground">No lessons yet</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Get started by adding the first lesson to your module journey.
+                </p>
               </div>
-            ))}
+            ) : (
+              lessons.map((lesson, index) => (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-border bg-background p-5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
+                        Lesson {index + 1}
+                      </p>
+                      <h3 className="mt-2 text-lg font-semibold text-foreground">{lesson.title}</h3>
+                      <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
+                        {lesson.meta}
+                      </p>
+                    </div>
+                    <button className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
+                      Edit
+                    </button>
+                  </div>
+                  <p className="mt-4 text-sm text-muted-foreground">{lesson.description}</p>
+                </div>
+              ))
+            )}
           </div>
         </section>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2 rounded-full bg-gold-soft px-4 py-2 text-sm font-semibold text-primary-deep">
-            <Sparkles className="h-4 w-4" /> Demo draft ready for preview
+            <Sparkles className="h-4 w-4" /> Draft mode
           </div>
           <div className="flex flex-wrap gap-3">
-            <button className="rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted">
+            <button
+              onClick={() => toast.success("Draft saved successfully!")}
+              className="rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted"
+            >
               Save draft
             </button>
-            <Link
-              to="/academy/admin/modules/parent-communication-protocol"
+            <button
+              onClick={() => {
+                toast.success("Module published successfully! Redirecting...");
+                setTimeout(() => navigate({ to: "/academy/admin/modules" }), 1500);
+              }}
               className="rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
             >
-              Open module editor
-            </Link>
+              Publish module
+            </button>
           </div>
         </div>
       </div>
