@@ -38,7 +38,9 @@ function Complete() {
               <div key={r.label} className="rounded-2xl border border-border bg-card p-5 text-left">
                 <r.icon className="h-5 w-5 text-gold" />
                 <p className="mt-3 text-2xl font-bold text-foreground">{r.big}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-primary">{r.label}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary">
+                  {r.label}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">{r.sub}</p>
               </div>
             ))}

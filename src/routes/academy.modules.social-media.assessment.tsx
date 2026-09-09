@@ -51,7 +51,8 @@ function Quiz() {
           </div>
 
           <h2 className="mt-4 text-xl font-bold leading-snug text-foreground sm:text-2xl">
-            A parent posts a public complaint about a Cliffview teacher on Facebook. What is the appropriate first response from staff?
+            A parent posts a public complaint about a Cliffview teacher on Facebook. What is the
+            appropriate first response from staff?
           </h2>
 
           <div className="mt-6 space-y-3">
@@ -69,7 +70,9 @@ function Quiz() {
                 >
                   <span
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                      isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                      isSelected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
                     {o.key}

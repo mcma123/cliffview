@@ -124,9 +124,7 @@ function AdminLessonEditor() {
 
           <div className="space-y-6">
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
-                Hero media
-              </p>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Hero media</p>
               <div className="mt-5">
                 <DragAndDropZone
                   title={data.mediaTitle}
@@ -140,7 +138,7 @@ function AdminLessonEditor() {
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Upload zones</p>
               <div className="mt-5 space-y-3">
-                {data.uploadZones.map((zone: any) => (
+                {data.uploadZones.map((zone) => (
                   <DragAndDropZone
                     key={zone.title}
                     title={zone.title}

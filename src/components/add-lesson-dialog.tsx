@@ -14,7 +14,12 @@ export function AddLessonDialog({
   onAddLesson,
 }: {
   children: React.ReactNode;
-  onAddLesson?: (lesson: { title: string; meta: string; description: string; kind: string }) => void;
+  onAddLesson?: (lesson: {
+    title: string;
+    meta: string;
+    description: string;
+    kind: string;
+  }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -38,7 +43,8 @@ export function AddLessonDialog({
           </div>
           <DialogTitle className="mt-4 text-2xl font-bold text-white">Add a new lesson</DialogTitle>
           <DialogDescription className="mt-2 text-primary-foreground/80">
-            Define the structure and format for this lesson block. You can attach content and media later in the lesson editor.
+            Define the structure and format for this lesson block. You can attach content and media
+            later in the lesson editor.
           </DialogDescription>
         </DialogHeader>
 
@@ -74,13 +80,17 @@ export function AddLessonDialog({
                   >
                     <div
                       className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                        isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                        isSelected
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
                       }`}
                     >
                       <type.icon className="h-5 w-5" />
                     </div>
                     <div>
-                      <h4 className={`font-semibold ${isSelected ? "text-primary-deep" : "text-foreground"}`}>
+                      <h4
+                        className={`font-semibold ${isSelected ? "text-primary-deep" : "text-foreground"}`}
+                      >
                         {type.label}
                       </h4>
                       <p className="mt-1 text-xs text-muted-foreground">{type.desc}</p>

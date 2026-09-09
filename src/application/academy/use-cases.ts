@@ -538,11 +538,14 @@ export function applyAiReviewDecision(
 export function getAdminStaffDirectory(repo: AcademyRepository) {
   const staffProfiles = repo.listAdminStaffProfiles();
   const totalStaff = staffProfiles.length;
-  const avgCompliance = totalStaff > 0 
-    ? Math.round(staffProfiles.reduce((acc, curr) => acc + curr.compliancePercent, 0) / totalStaff)
-    : 0;
-  
-  const highPerformers = staffProfiles.filter(s => s.compliancePercent >= 80).length;
+  const avgCompliance =
+    totalStaff > 0
+      ? Math.round(
+          staffProfiles.reduce((acc, curr) => acc + curr.compliancePercent, 0) / totalStaff,
+        )
+      : 0;
+
+  const highPerformers = staffProfiles.filter((s) => s.compliancePercent >= 80).length;
 
   return {
     summary: {
@@ -550,7 +553,7 @@ export function getAdminStaffDirectory(repo: AcademyRepository) {
       avgCompliance,
       highPerformers,
     },
-    directory: staffProfiles.map(staff => ({
+    directory: staffProfiles.map((staff) => ({
       id: staff.id,
       name: `${staff.firstName} ${staff.lastName}`,
       role: staff.role,
@@ -561,7 +564,7 @@ export function getAdminStaffDirectory(repo: AcademyRepository) {
       cptdPoints: staff.cptdPoints,
       recentActivityLabel: staff.recentActivityLabel,
       href: `/academy/admin/staff/${staff.id}`,
-    }))
+    })),
   };
 }
 
@@ -576,17 +579,21 @@ export function getAdminStaffDetail(repo: AcademyRepository, staffId: string) {
     name: `${staff.firstName} ${staff.lastName}`,
     role: staff.role,
     phase: staff.phase,
-    initials: `${staff.firstName[0]}${staff.lastName.replace("Ms. ", "").replace("Mr. ", "").replace("Mrs. ", "")[0]}`.toUpperCase(),
+    initials:
+      `${staff.firstName[0]}${staff.lastName.replace("Ms. ", "").replace("Mr. ", "").replace("Mrs. ", "")[0]}`.toUpperCase(),
     compliancePercent: staff.compliancePercent,
     stats: [
-      { label: "Modules Completed", value: `${staff.completedModulesCount} / ${staff.totalAssignedModules}` },
+      {
+        label: "Modules Completed",
+        value: `${staff.completedModulesCount} / ${staff.totalAssignedModules}`,
+      },
       { label: "CPTD Points", value: `${staff.cptdPoints} pts` },
       { label: "Total XP", value: `${staff.xpTotal}` },
       { label: "Last Active", value: staff.recentActivityLabel },
     ],
-    modules: staff.modules.map(mod => ({
+    modules: staff.modules.map((mod) => ({
       ...mod,
-      href: `/academy/admin/modules/${mod.moduleSlug}`
-    }))
+      href: `/academy/admin/modules/${mod.moduleSlug}`,
+    })),
   };
 }

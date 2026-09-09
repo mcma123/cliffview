@@ -27,7 +27,9 @@ export function AddObjectiveDialog({
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gold text-primary-deep shadow-lg">
             <Plus className="h-6 w-6" />
           </div>
-          <DialogTitle className="mt-4 text-2xl font-bold text-white">Add learning objective</DialogTitle>
+          <DialogTitle className="mt-4 text-2xl font-bold text-white">
+            Add learning objective
+          </DialogTitle>
           <DialogDescription className="mt-2 text-primary-foreground/80">
             Define a specific outcome that staff will achieve by completing this module.
           </DialogDescription>

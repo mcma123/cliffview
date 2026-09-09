@@ -59,7 +59,9 @@ function AdminStaffIndexComponent() {
                 Avg. Compliance
               </p>
             </div>
-            <p className="mt-4 text-4xl font-black text-foreground">{data.summary.avgCompliance}%</p>
+            <p className="mt-4 text-4xl font-black text-foreground">
+              {data.summary.avgCompliance}%
+            </p>
             <p className="mt-1 text-sm font-medium text-muted-foreground">Across all modules</p>
           </article>
 
@@ -72,7 +74,9 @@ function AdminStaffIndexComponent() {
                 High Performers
               </p>
             </div>
-            <p className="mt-4 text-4xl font-black text-foreground">{data.summary.highPerformers}</p>
+            <p className="mt-4 text-4xl font-black text-foreground">
+              {data.summary.highPerformers}
+            </p>
             <p className="mt-1 text-sm font-medium text-success">Staff with &gt; 80% compliance</p>
           </article>
         </section>
@@ -122,12 +126,18 @@ function AdminStaffIndexComponent() {
                         <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
                           <div
                             className={`h-full rounded-full ${
-                              staff.compliancePercent >= 80 ? "bg-success" : staff.compliancePercent >= 50 ? "bg-gold" : "bg-destructive"
+                              staff.compliancePercent >= 80
+                                ? "bg-success"
+                                : staff.compliancePercent >= 50
+                                  ? "bg-gold"
+                                  : "bg-destructive"
                             }`}
                             style={{ width: `${staff.compliancePercent}%` }}
                           />
                         </div>
-                        <span className="font-bold text-foreground">{staff.compliancePercent}%</span>
+                        <span className="font-bold text-foreground">
+                          {staff.compliancePercent}%
+                        </span>
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 font-medium text-foreground">

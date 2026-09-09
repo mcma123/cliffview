@@ -34,15 +34,21 @@ function LessonPlayer() {
                 <li
                   key={s.n}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
-                    s.current ? "bg-primary-soft font-semibold text-primary-deep" : "text-foreground hover:bg-muted"
+                    s.current
+                      ? "bg-primary-soft font-semibold text-primary-deep"
+                      : "text-foreground hover:bg-muted"
                   }`}
                 >
                   {s.done ? (
                     <CheckCircle2 className="h-4 w-4 text-success" />
                   ) : (
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
-                      s.current ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground"
-                    }`}>
+                    <span
+                      className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold ${
+                        s.current
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground"
+                      }`}
+                    >
                       {s.n}
                     </span>
                   )}
@@ -60,7 +66,9 @@ function LessonPlayer() {
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Section 3 of 4
               </p>
-              <h1 className="mt-1 text-3xl font-bold text-foreground sm:text-4xl">Real-world scenarios</h1>
+              <h1 className="mt-1 text-3xl font-bold text-foreground sm:text-4xl">
+                Real-world scenarios
+              </h1>
             </div>
 
             {/* Player */}
@@ -84,7 +92,9 @@ function LessonPlayer() {
               <p className="text-xs font-bold uppercase tracking-widest text-gold">Scenario</p>
               <h2 className="mt-2 text-2xl font-bold text-foreground">The viral parent post</h2>
               <p className="mt-4 text-[15px] leading-relaxed text-foreground">
-                A parent posts a complaint about Cliffview on a community Facebook group. Within an hour it has 200 shares. Three staff members have already been tagged in the comments.
+                A parent posts a complaint about Cliffview on a community Facebook group. Within an
+                hour it has 200 shares. Three staff members have already been tagged in the
+                comments.
               </p>
               <div className="mt-6 rounded-xl border-l-4 border-gold bg-gold-soft/50 p-5">
                 <p className="text-[11px] font-bold uppercase tracking-widest text-primary-deep">

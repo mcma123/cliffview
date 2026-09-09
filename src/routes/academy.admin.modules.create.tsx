@@ -45,7 +45,9 @@ const assetDrafts = [
 function CreateModulePage() {
   const navigate = useNavigate();
   const [objectives, setObjectives] = useState<string[]>([]);
-  const [lessons, setLessons] = useState<{ title: string; meta: string; description: string; kind: string }[]>([]);
+  const [lessons, setLessons] = useState<
+    { title: string; meta: string; description: string; kind: string }[]
+  >([]);
 
   return (
     <AdminShell>
@@ -149,7 +151,9 @@ function CreateModulePage() {
                     These will appear as learner-side outcome cards.
                   </p>
                 </div>
-                <AddObjectiveDialog onAddObjective={(obj) => setObjectives((prev) => [...prev, obj])}>
+                <AddObjectiveDialog
+                  onAddObjective={(obj) => setObjectives((prev) => [...prev, obj])}
+                >
                   <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
                     <Plus className="h-4 w-4" /> Add objective
                   </button>

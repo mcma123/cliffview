@@ -65,19 +65,25 @@ function Leaderboard() {
                 <div
                   key={p.rank}
                   className={`rounded-2xl border border-border bg-card p-6 text-center ${
-                    isFirst ? "sm:-translate-y-4 border-gold bg-gradient-to-b from-gold-soft to-card shadow-xl" : "shadow-sm"
+                    isFirst
+                      ? "sm:-translate-y-4 border-gold bg-gradient-to-b from-gold-soft to-card shadow-xl"
+                      : "shadow-sm"
                   }`}
                 >
-                  <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full text-base font-bold ${
-                    isFirst ? "bg-gold text-primary-deep" : "bg-primary text-primary-foreground"
-                  }`}>
+                  <div
+                    className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full text-base font-bold ${
+                      isFirst ? "bg-gold text-primary-deep" : "bg-primary text-primary-foreground"
+                    }`}
+                  >
                     {p.initials}
                   </div>
                   <p className="mt-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Rank #{p.rank}
                   </p>
                   <p className="mt-1 font-bold text-foreground">{p.name}</p>
-                  <p className="mt-2 text-lg font-bold text-primary">{p.xp} <span className="text-xs text-muted-foreground">XP</span></p>
+                  <p className="mt-2 text-lg font-bold text-primary">
+                    {p.xp} <span className="text-xs text-muted-foreground">XP</span>
+                  </p>
                   {isFirst && <Trophy className="mx-auto mt-2 h-5 w-5 text-gold" />}
                 </div>
               );

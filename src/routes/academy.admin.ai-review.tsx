@@ -2,7 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import type { ReviewDecision } from "@/domain/academy/entities";
 import { academyCommands, academyQueries } from "@/infrastructure/academy/container";
-import { Sparkles, Check, X, Pencil, Upload, Bot, FileText, ArrowRight, Loader2 } from "lucide-react";
+import {
+  Sparkles,
+  Check,
+  X,
+  Pencil,
+  Upload,
+  Bot,
+  FileText,
+  ArrowRight,
+  Loader2,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 
@@ -30,7 +40,7 @@ function AIReview() {
       const interval = setInterval(() => {
         currentProgress += 2;
         setProgress(currentProgress);
-        
+
         if (currentProgress < 30) setStepText("Extracting text from uploaded documents...");
         else if (currentProgress < 60) setStepText("Identifying key learning objectives...");
         else if (currentProgress < 90) setStepText("Drafting assessment questions...");
@@ -40,21 +50,30 @@ function AIReview() {
           clearInterval(interval);
           setIsGenerating(false);
           setIsComplete(true);
-          
+
           // Add 2 new mock questions
           setQuestions((prev) => [
             {
               id: Date.now(),
               moduleTitle: "New Uploaded Document",
-              prompt: "What is the recommended first step when dealing with an escalated situation?",
+              prompt:
+                "What is the recommended first step when dealing with an escalated situation?",
               difficulty: "Medium",
               confidencePercent: 95,
               options: [
                 { key: "A", text: "Immediately inform the principal", isCorrect: false },
-                { key: "B", text: "Acknowledge the concern and move the conversation offline", isCorrect: true },
+                {
+                  key: "B",
+                  text: "Acknowledge the concern and move the conversation offline",
+                  isCorrect: true,
+                },
                 { key: "C", text: "Ignore the message until the end of the day", isCorrect: false },
-                { key: "D", text: "Reply with a detailed defense of the school's actions", isCorrect: false }
-              ]
+                {
+                  key: "D",
+                  text: "Reply with a detailed defense of the school's actions",
+                  isCorrect: false,
+                },
+              ],
             },
             {
               id: Date.now() + 1,
@@ -64,12 +83,16 @@ function AIReview() {
               confidencePercent: 88,
               options: [
                 { key: "A", text: "WhatsApp group chat", isCorrect: false },
-                { key: "B", text: "A phone call followed by an official school email", isCorrect: true },
+                {
+                  key: "B",
+                  text: "A phone call followed by an official school email",
+                  isCorrect: true,
+                },
                 { key: "C", text: "A handwritten note in the student's diary", isCorrect: false },
-                { key: "D", text: "A casual conversation during pick-up time", isCorrect: false }
-              ]
+                { key: "D", text: "A casual conversation during pick-up time", isCorrect: false },
+              ],
             },
-            ...prev
+            ...prev,
           ]);
         }
       }, 100);
@@ -96,7 +119,7 @@ function AIReview() {
               AI drafts questions from module content. Nothing goes live without your approval.
             </p>
           </div>
-          
+
           <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
             <button
               onClick={() => setActiveTab("queue")}
@@ -129,8 +152,8 @@ function AIReview() {
                 pending
               </span>
               <span className="inline-flex items-center gap-2 rounded-full bg-success/15 px-3 py-1 text-xs font-bold text-success">
-                <span className="h-1.5 w-1.5 rounded-full bg-success" /> {data.summary.approvedCount}{" "}
-                approved
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />{" "}
+                {data.summary.approvedCount} approved
               </span>
               <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {data.summary.editedCount}{" "}
@@ -243,7 +266,8 @@ function AIReview() {
                 <div>
                   <h2 className="text-xl font-bold text-foreground">Generate mock questions</h2>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Upload policy documents, handbooks, or lesson notes. Our AI will ingest the context and automatically draft assessment questions for you to review.
+                    Upload policy documents, handbooks, or lesson notes. Our AI will ingest the
+                    context and automatically draft assessment questions for you to review.
                   </p>
                 </div>
               </div>
@@ -254,9 +278,9 @@ function AIReview() {
                     <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
                     <h3 className="mt-4 text-lg font-bold text-foreground">AI is working...</h3>
                     <p className="mt-1 text-sm font-semibold text-primary">{stepText}</p>
-                    
+
                     <div className="mx-auto mt-6 h-2 w-full max-w-md overflow-hidden rounded-full bg-muted">
-                      <div 
+                      <div
                         className="h-full rounded-full bg-gradient-to-r from-primary to-gold transition-all duration-300 ease-out"
                         style={{ width: `${progress}%` }}
                       />
@@ -267,9 +291,12 @@ function AIReview() {
                     <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20 text-success">
                       <Check className="h-8 w-8" />
                     </div>
-                    <h3 className="mt-4 text-xl font-bold text-foreground">Questions generated successfully!</h3>
+                    <h3 className="mt-4 text-xl font-bold text-foreground">
+                      Questions generated successfully!
+                    </h3>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      The AI extracted the key concepts and drafted 2 new questions for your review queue.
+                      The AI extracted the key concepts and drafted 2 new questions for your review
+                      queue.
                     </p>
                     <button
                       onClick={() => setActiveTab("queue")}
@@ -289,7 +316,7 @@ function AIReview() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <DragAndDropZone 
+                    <DragAndDropZone
                       title="Upload source material"
                       description="Drag and drop PDFs, DOCX, or text files here to begin."
                       icon={FileText}

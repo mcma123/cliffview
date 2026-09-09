@@ -4,12 +4,7 @@ export type ModuleCategory = "Core Policies" | "SMT Pathway" | "Staff Developmen
 
 export type ReviewDecision = "pending" | "approved" | "rejected" | "edited";
 
-export type ModuleLessonKind =
-  | "video"
-  | "audio"
-  | "reading"
-  | "case-study"
-  | "assessment";
+export type ModuleLessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";
 
 export type ModuleAssetKind = "video" | "audio" | "document" | "worksheet";
 

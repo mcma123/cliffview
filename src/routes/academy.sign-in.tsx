@@ -27,9 +27,15 @@ function SignInPage() {
               Continuous Professional Teacher Development — right here, on Cliffview's own server.
             </p>
             <ul className="mt-12 space-y-3 text-sm">
-              <li className="flex items-center gap-3"><Lock className="h-4 w-4 text-gold" /> Hosted on-site</li>
-              <li className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-gold" /> GDE-aligned</li>
-              <li className="flex items-center gap-3"><Sparkles className="h-4 w-4 text-gold" /> AI-powered</li>
+              <li className="flex items-center gap-3">
+                <Lock className="h-4 w-4 text-gold" /> Hosted on-site
+              </li>
+              <li className="flex items-center gap-3">
+                <CheckCircle2 className="h-4 w-4 text-gold" /> GDE-aligned
+              </li>
+              <li className="flex items-center gap-3">
+                <Sparkles className="h-4 w-4 text-gold" /> AI-powered
+              </li>
             </ul>
           </div>
         </div>
@@ -72,7 +78,11 @@ function SignInPage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 text-foreground">
-                <input type="checkbox" defaultChecked className="h-4 w-4 accent-[color:var(--primary)]" />
+                <input
+                  type="checkbox"
+                  defaultChecked
+                  className="h-4 w-4 accent-[color:var(--primary)]"
+                />
                 Keep me signed in
               </label>
               <a className="font-semibold text-gold hover:underline" href="#">

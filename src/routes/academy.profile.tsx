@@ -54,7 +54,9 @@ function Profile() {
           <section className="rounded-2xl border border-border bg-card p-6 lg:col-span-2">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-gold">Badges Earned</p>
+                <p className="text-xs font-bold uppercase tracking-widest text-gold">
+                  Badges Earned
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">4 of 12 unlocked</p>
               </div>
             </div>
@@ -63,12 +65,16 @@ function Profile() {
                 <div
                   key={b.name}
                   className={`flex flex-col items-center rounded-xl border p-4 text-center ${
-                    b.earned ? "border-gold/40 bg-gold-soft/40" : "border-border bg-muted/30 opacity-60"
+                    b.earned
+                      ? "border-gold/40 bg-gold-soft/40"
+                      : "border-border bg-muted/30 opacity-60"
                   }`}
                 >
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                    b.earned ? "bg-gold text-primary-deep" : "bg-muted text-muted-foreground"
-                  }`}>
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-full ${
+                      b.earned ? "bg-gold text-primary-deep" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
                     {b.earned ? <Award className="h-6 w-6" /> : <Lock className="h-5 w-5" />}
                   </div>
                   <p className="mt-2 text-xs font-bold text-foreground">{b.name}</p>
@@ -88,7 +94,10 @@ function Profile() {
             </div>
             <ul className="mt-4 space-y-3">
               {ledger.map((l) => (
-                <li key={l.title} className="flex items-center justify-between border-b border-border pb-3 last:border-0 last:pb-0">
+                <li
+                  key={l.title}
+                  className="flex items-center justify-between border-b border-border pb-3 last:border-0 last:pb-0"
+                >
                   <div>
                     <p className="text-sm font-semibold text-foreground">{l.title}</p>
                     <p className="text-xs text-muted-foreground">{l.date}</p>

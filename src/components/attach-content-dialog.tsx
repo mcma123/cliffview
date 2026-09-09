@@ -10,7 +10,13 @@ import {
 import { Paperclip, FileText } from "lucide-react";
 import { DragAndDropZone } from "./drag-and-drop-zone";
 
-export function AttachContentDialog({ children, defaultTitle }: { children: React.ReactNode, defaultTitle?: string }) {
+export function AttachContentDialog({
+  children,
+  defaultTitle,
+}: {
+  children: React.ReactNode;
+  defaultTitle?: string;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -23,17 +29,20 @@ export function AttachContentDialog({ children, defaultTitle }: { children: Reac
               <Paperclip className="h-6 w-6" />
             </div>
             <div>
-              <DialogTitle className="text-2xl font-bold text-foreground">Attach resource</DialogTitle>
+              <DialogTitle className="text-2xl font-bold text-foreground">
+                Attach resource
+              </DialogTitle>
               <DialogDescription className="mt-1 text-sm text-muted-foreground">
-                Upload a document, template, or media file to attach directly to {defaultTitle ? `"${defaultTitle}"` : "this lesson"}.
+                Upload a document, template, or media file to attach directly to{" "}
+                {defaultTitle ? `"${defaultTitle}"` : "this lesson"}.
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
         <div className="p-6 sm:p-8 space-y-6">
-          <DragAndDropZone 
-            title="Upload resource" 
+          <DragAndDropZone
+            title="Upload resource"
             description="Drag and drop a PDF, Word doc, or media file here"
             icon={FileText}
           />

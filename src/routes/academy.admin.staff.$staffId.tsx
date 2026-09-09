@@ -39,7 +39,11 @@ function AdminStaffDetailComponent() {
               <div className="h-3 flex-1 w-full sm:w-32 overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full ${
-                    data.compliancePercent >= 80 ? "bg-success" : data.compliancePercent >= 50 ? "bg-gold" : "bg-destructive"
+                    data.compliancePercent >= 80
+                      ? "bg-success"
+                      : data.compliancePercent >= 50
+                        ? "bg-gold"
+                        : "bg-destructive"
                   }`}
                   style={{ width: `${data.compliancePercent}%` }}
                 />
@@ -51,7 +55,10 @@ function AdminStaffDetailComponent() {
 
         <section className="grid gap-4 sm:grid-cols-4">
           {data.stats.map((stat) => (
-            <article key={stat.label} className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+            <article
+              key={stat.label}
+              className="rounded-3xl border border-border bg-card p-6 shadow-sm"
+            >
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 {stat.label}
               </p>
@@ -65,7 +72,7 @@ function AdminStaffDetailComponent() {
             <BookOpen className="h-5 w-5 text-gold" />
             Module Development Tracker
           </h2>
-          
+
           <div className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -92,7 +99,10 @@ function AdminStaffDetailComponent() {
                   {data.modules.map((mod) => (
                     <tr key={mod.moduleSlug} className="group transition-colors hover:bg-muted/40">
                       <td className="px-6 py-4">
-                        <Link to={mod.href} className="font-bold text-foreground hover:text-primary transition-colors">
+                        <Link
+                          to={mod.href}
+                          className="font-bold text-foreground hover:text-primary transition-colors"
+                        >
                           {mod.moduleTitle}
                         </Link>
                       </td>

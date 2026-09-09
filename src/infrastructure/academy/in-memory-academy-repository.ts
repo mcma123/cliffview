@@ -698,7 +698,7 @@ const adminStaffProfiles: AdminStaffProfile[] = [
         score: 80,
         lastAccessedLabel: "1 week ago",
       },
-    ]
+    ],
   },
   {
     id: "staff-02",
@@ -731,7 +731,7 @@ const adminStaffProfiles: AdminStaffProfile[] = [
         score: 92,
         lastAccessedLabel: "2 days ago",
       },
-    ]
+    ],
   },
   {
     id: "staff-03",
@@ -763,7 +763,7 @@ const adminStaffProfiles: AdminStaffProfile[] = [
         progressPercent: 0,
         lastAccessedLabel: "Never",
       },
-    ]
+    ],
   },
 ];
 

@@ -45,7 +45,7 @@ export function DragAndDropZone({
         }
       }
     },
-    [onUpload]
+    [onUpload],
   );
 
   const handleFileInput = useCallback(
@@ -58,7 +58,7 @@ export function DragAndDropZone({
         }
       }
     },
-    [onUpload]
+    [onUpload],
   );
 
   return (
@@ -80,7 +80,7 @@ export function DragAndDropZone({
         className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
         onChange={handleFileInput}
       />
-      
+
       <div className="flex flex-col items-center justify-center text-center">
         {uploadedFile ? (
           <div className="flex flex-col items-center space-y-3">
@@ -105,7 +105,9 @@ export function DragAndDropZone({
           <div className="flex flex-col items-center space-y-3">
             <div
               className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-                isDragging ? "bg-primary text-primary-foreground scale-110" : "bg-primary-soft text-primary"
+                isDragging
+                  ? "bg-primary text-primary-foreground scale-110"
+                  : "bg-primary-soft text-primary"
               }`}
             >
               <Icon className="h-6 w-6" />

@@ -170,7 +170,7 @@ function Modules() {
                     {module.meta}
                   </p>
                 </div>
-                
+
                 <div className="mt-8">
                   <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
                     <span>Progress</span>
@@ -179,14 +179,17 @@ function Modules() {
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
                     <div
                       className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                        featured ? "bg-gradient-to-r from-primary to-gold" : "bg-primary/70 group-hover:bg-primary"
+                        featured
+                          ? "bg-gradient-to-r from-primary to-gold"
+                          : "bg-primary/70 group-hover:bg-primary"
                       }`}
                       style={{ width: `${module.progressPercent}%` }}
                     />
                   </div>
                   {!locked && (
                     <div className="mt-5 flex items-center gap-2 text-xs font-bold text-primary opacity-0 transition-all duration-300 group-hover:opacity-100">
-                      View lessons <ArrowRight className="h-3 w-3 -translate-x-2 transition-transform duration-300 group-hover:translate-x-0" />
+                      View lessons{" "}
+                      <ArrowRight className="h-3 w-3 -translate-x-2 transition-transform duration-300 group-hover:translate-x-0" />
                     </div>
                   )}
                 </div>
@@ -194,9 +197,15 @@ function Modules() {
             );
 
             return locked ? (
-              <div key={module.number} className="h-full">{inner}</div>
+              <div key={module.number} className="h-full">
+                {inner}
+              </div>
             ) : (
-              <Link key={module.number} to={module.href} className="block h-full outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-3xl">
+              <Link
+                key={module.number}
+                to={module.href}
+                className="block h-full outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-3xl"
+              >
                 {inner}
               </Link>
             );

@@ -18,9 +18,7 @@ export function CliffviewWordmark({ className }: { className?: string }) {
     <div className={cn("flex items-center gap-3", className)}>
       <CliffviewShield className="h-10 w-10" />
       <div className="leading-tight">
-        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-gold">
-          Cliffview
-        </div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-gold">Cliffview</div>
         <div className="text-sm font-bold tracking-wide text-sidebar-foreground">Academy</div>
       </div>
     </div>

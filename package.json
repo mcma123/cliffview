@@ -13,6 +13,8 @@
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "typecheck:convex": "tsc --noEmit -p convex",
     "format": "prettier --write ."
   },
   "dependencies": {
@@ -51,6 +53,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "convex": "^1.45.0",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",

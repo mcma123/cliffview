@@ -14,12 +14,15 @@ This file breaks the next UI work into clear phases. Each phase should be checke
 ## Phase 1: Asset Editor Route
 
 Status:
+
 - [x] Completed
 
 Goal:
+
 - Add a dedicated admin-side asset editor route for module documents, video placeholders, and audio placeholders.
 
 Scope:
+
 - Create a route for editing a single asset from the admin module editor.
 - Support UI sections for:
   - asset title
@@ -31,12 +34,14 @@ Scope:
 - Link asset cards from the admin module editor into the new asset editor route.
 
 Deliverables:
+
 - New asset editor page UI
 - Route wiring
 - Navigation from module editor to asset editor
 - Shared mock data/view-model support if needed
 
 Definition of done:
+
 - Admin can open a dedicated page for an asset from the module editor UI.
 - The page visually supports video, audio, and document placeholders.
 - The route builds and lint checks pass.
@@ -46,12 +51,15 @@ Definition of done:
 ## Phase 2: Lesson Ordering UI
 
 Status:
+
 - [x] Completed
 
 Goal:
+
 - Add a drag-and-drop-looking lesson ordering experience to the admin module editor.
 
 Scope:
+
 - Update the lesson builder area so lesson cards visibly look reorderable.
 - Add visual affordances such as:
   - drag handles
@@ -60,11 +68,13 @@ Scope:
 - Keep it UI-only for now without backend persistence.
 
 Deliverables:
+
 - Reorder-focused lesson list styling
 - Admin-facing reorder controls or placeholder drag interactions
 - Clear visual hierarchy for lesson sequence
 
 Definition of done:
+
 - Lesson order feels intentionally designed for reordering.
 - UI communicates reorderability even if persistence is not implemented yet.
 - The module editor remains consistent with the portal theme.
@@ -74,12 +84,15 @@ Definition of done:
 ## Phase 3: Academy Docs Drawer/Modal
 
 Status:
+
 - [x] Completed
 
 Goal:
+
 - Replace static lesson resource cards on the academy side with a real “More docs” drawer or modal pattern.
 
 Scope:
+
 - Add a learner-side trigger in the lesson view.
 - Open a drawer or modal that displays related documents/resources for the lesson.
 - Include UI blocks for:
@@ -89,11 +102,13 @@ Scope:
   - placeholder actions such as open/download/view
 
 Deliverables:
+
 - Drawer or modal component usage in the academy lesson experience
 - Lesson-level docs trigger
 - Styled resource list inside overlay UI
 
 Definition of done:
+
 - Staff can open a focused docs experience from a lesson page.
 - Static inline docs are replaced or reduced in favor of the overlay pattern.
 - The interaction works cleanly on desktop and mobile layouts.
@@ -103,12 +118,15 @@ Definition of done:
 ## Phase 4: Final Integration and Verification
 
 Status:
+
 - [ ] Not started
 
 Goal:
+
 - Finalize the three features as one coherent module-management and learner-consumption flow.
 
 Scope:
+
 - Check navigation between:
   - admin module editor
   - lesson editor
@@ -118,11 +136,13 @@ Scope:
 - Run formatting, linting, and build verification.
 
 Deliverables:
+
 - Integrated route flow
 - Updated route generation if needed
 - Final verification pass
 
 Definition of done:
+
 - All related routes compile correctly.
 - UI relationships between admin and academy sides remain coherent.
 - Lint/build verification succeeds.
