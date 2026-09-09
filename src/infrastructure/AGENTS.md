@@ -25,6 +25,7 @@ Adapters and composition: the seeded in-memory repository implementation plus th
   - 4 staff profiles
 - `createStandardResources` and `createStandardSections` generate the common shape for most modules. Change them and you change every module that uses them — check per-module overrides before editing
 - Slug and id strings here are referenced literally by `application` fallbacks and by some route files. Renaming one requires a repo-wide search
+- **These identifiers are now duplicated in `convex/seed/data.ts`**, which is the live source for the production deployment. Change one and you must change both until Phase 8 deletes this file. Note that the Convex seed deliberately drops `sectionCount` and the per-module `progressPercent`/`status` recorded here, because they were wrong or belonged to a learner rather than the content
 
 ## Work Guidance
 

@@ -8,7 +8,7 @@ Each phase is independently shippable: at every phase boundary the app builds, e
 
 - [x] Phase 0: Toolchain and Safety Rails
 - [x] Phase 1: Schema and Read Functions
-- [ ] Phase 2: Seed Content and People
+- [x] Phase 2: Seed Content and People
 - [ ] Phase 3: Client Wiring and Admin Content Reads
 - [ ] Phase 4: Auth and the Admin Guard
 - [ ] Phase 5: Content Mutations and Test Harness
@@ -111,7 +111,7 @@ Definition of done:
 
 Status:
 
-- [ ] Completed
+- [x] Completed
 
 Consent gates: **G2** — `npx convex run seed:run` (first write to prod). **G3** — `npx convex export` baseline.
 
@@ -121,21 +121,21 @@ Goal:
 
 Tasks:
 
-- [ ] `convex/seed/data.ts` — the content, copied in (it cannot import `@/domain`; the duplication dies at Phase 8)
-- [ ] `convex/seed.ts` — `internal.seed.run` as an idempotent `internalMutation`, not `npx convex import`, because the seed needs cleanup rather than transcription and slug-to-id resolution is natural in a mutation
-- [ ] Guards: `internalMutation` (not client-reachable), a required `confirm: v.literal("cliffview")` arg, and `mode: "insert-missing" | "reset"` where `reset` throws unless the tables are empty or `iAmSure: v.literal(true)` is passed
-- [ ] Cleanups the seed performs: split `honorific`/`firstName`/`lastName`; omit `sectionCount`; omit per-module `progressPercent`/`status`; convert `documentIds` arrays into `lessonAssets` rows; omit the contradictory staff counters; convert `lastUpdatedLabel` into `contentUpdatedAt`
-- [ ] Backfill so numbers are true and plausible: add the missing **Mr. Pillay** profile (currently only a leaderboard row), and add the enrollment/progress rows that make staff-01's 88% and staff-02's 6-of-6 accurate
-- [ ] Seed `phases`, `monthlyRollups` (6 trend points), and `counters`
+- [x] `convex/seed/data.ts` — the content, copied in (it cannot import `@/domain`; the duplication dies at Phase 8)
+- [x] `convex/seed.ts` — `internal.seed.run` as an idempotent `internalMutation`, not `npx convex import`, because the seed needs cleanup rather than transcription and slug-to-id resolution is natural in a mutation
+- [x] Guards: `internalMutation` (not client-reachable), a required `confirm: v.literal("cliffview")` arg, and `mode: "insert-missing" | "reset"` where `reset` throws unless the tables are empty or `iAmSure: v.literal(true)` is passed
+- [x] Cleanups the seed performs: split `honorific`/`firstName`/`lastName`; omit `sectionCount`; omit per-module `progressPercent`/`status`; convert `documentIds` arrays into `lessonAssets` rows; omit the contradictory staff counters; convert `lastUpdatedLabel` into `contentUpdatedAt`
+- [x] Backfill so numbers are true and plausible: add the missing **Mr. Pillay** profile (currently only a leaderboard row), and add the enrollment/progress rows that make staff-01's 88% and staff-02's 6-of-6 accurate
+- [x] Seed `phases`, `monthlyRollups` (6 trend points), and `counters`
 - [ ] Ask the user to generate a preview `CONVEX_DEPLOY_KEY` in the dashboard, so Phases 3-7 can rehearse schema changes off prod
-- [ ] DOX pass: `convex/AGENTS.md` seed contract and idempotence; `src/infrastructure/AGENTS.md` note that the seeded-identifier list is now duplicated in `convex/seed/data.ts`
+- [x] DOX pass: `convex/AGENTS.md` seed contract and idempotence; `src/infrastructure/AGENTS.md` note that the seeded-identifier list is now duplicated in `convex/seed/data.ts`
 
 Verification:
 
-- [ ] **G2** run completes
-- [ ] `npx convex data modules|lessons|assets|users` shows the expected counts
-- [ ] Re-running with `insert-missing` leaves counts unchanged (idempotence)
-- [ ] **G3** baseline export taken
+- [x] **G2** run completes
+- [x] `npx convex data modules|lessons|assets|users` shows the expected counts
+- [x] Re-running with `insert-missing` leaves counts unchanged (idempotence)
+- [x] **G3** baseline export taken
 
 Definition of done:
 

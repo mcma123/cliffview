@@ -17,6 +17,8 @@ import type * as lib_counts from "../lib/counts.js";
 import type * as lib_ordering from "../lib/ordering.js";
 import type * as lib_time from "../lib/time.js";
 import type * as modules from "../modules.js";
+import type * as seed from "../seed.js";
+import type * as seed_data from "../seed/data.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -35,6 +37,8 @@ declare const fullApi: ApiFromModules<{
   "lib/ordering": typeof lib_ordering;
   "lib/time": typeof lib_time;
   modules: typeof modules;
+  seed: typeof seed;
+  "seed/data": typeof seed_data;
   validators: typeof validators;
 }>;
 

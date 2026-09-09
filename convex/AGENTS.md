@@ -72,10 +72,21 @@ Authorization, current posture:
 - No file download URL is served from a public query. `ctx.storage.getUrl` in a query keyed by a client-supplied id would hand a signed link to any caller who can guess a module slug; serving lands in Phase 6 with the privacy decision
 - No environment variables are set on the prod deployment yet
 
+Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):
+
+- `internal.seed.run` is an **idempotent `internalMutation`**, not `npx convex import`. The seed performs cleanup rather than transcription, and slug-to-id resolution is natural in a mutation
+- Guards: `internalMutation` (unreachable from any client), a required `confirm: "cliffview"` argument, and `mode: "reset"` which refuses populated tables unless `iAmSure: true` is also passed
+- Idempotency keys are natural keys: phase order, user email, module slug, (moduleId, lesson slug), (moduleId, asset title). Re-running `insert-missing` inserts nothing
+- `convex/seed/data.ts` now owns the nine module slugs and all seed prose. It is a deliberate copy of `src/infrastructure/academy/in-memory-academy-repository.ts` because `convex/` cannot import `@/domain`; Phase 8 deletes the in-memory repository, leaving this the only copy
+- The seed **derives** `users.compliancePercent` and the `counters` values from the enrollment rows it writes. Never seed an aggregate directly — that is how the old numbers came to contradict their own rows
+- `monthlyRollups` are anchored to the month the seed runs, so the six-month dashboard window is always populated. The final month carries the true completion count so the overview tile and the last trend bar agree
+- Take a snapshot before any schema-affecting push from here on: `npx convex export --path backups/<name>.zip`. `backups/` is gitignored — snapshots hold real staff data and must never be committed
+
 Current state:
 
 - The React app does not import Convex anywhere. Every route still renders from `src/infrastructure/academy/container.ts`
-- All 18 tables are empty until the Phase 2 seed runs
+- Prod holds seeded data: 5 phases, 4 users, 9 modules, 44 lessons, 36 assets, 55 lesson-asset links, 20 enrollments, 2 AI questions, 6 monthly rollups
+- `lessonProgress`, `assessmentAttempts`, `progressEvents`, `aiGenerations`, `aiReviewDecisions` and `auditLog` are intentionally empty until the phases that write them
 - No `convex/convex.config.ts` yet — added in Phase 4 when Better Auth needs `app.use()`
 
 ## Work Guidance
