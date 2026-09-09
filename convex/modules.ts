@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
 import { query } from "./_generated/server";
+import { requireAdmin } from "./lib/authz";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { MAX_MODULES } from "./lib/counts";
@@ -15,12 +16,11 @@ import schema from "./schema";
  * owns every user-facing string, so the same data can serve a different label
  * without a backend change.
  *
- * AUTHORIZATION: these are public and unauthenticated for now. They return
- * module content only — titles, copy, publish state, lesson prose — with no
- * personal, financial or audit data, and the learner side reads the same
- * content. Phase 4 adds `requireStaff` once an auth provider exists; until
- * then there is nothing to check against. Anything privileged stays an
- * `internalQuery` (see `convex/dashboard.ts`).
+ * AUTHORIZATION: `requireAdmin` on every entry point. These queries expose
+ * draft and archived content and the full asset list, so they are tighter than
+ * the plan's `requireStaff`: being signed in as staff is not the same as being
+ * allowed to see unpublished material. Learner-facing content queries arrive in
+ * Phase 8 and will filter on `publishState` instead.
  */
 
 /** Resolve a module by its URL slug, or throw a typed not-found. */
@@ -61,6 +61,7 @@ export const listForAdmin = query({
     }),
   ),
   handler: async (ctx) => {
+    await requireAdmin(ctx);
     const modules = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
 
     const rows = [];
@@ -102,6 +103,7 @@ export const adminDetail = query({
     featuredAsset: v.union(schema.doc("assets"), v.null()),
   }),
   handler: async (ctx, args) => {
+    await requireAdmin(ctx);
     const module = await moduleBySlugOrThrow(ctx, args.slug);
 
     const objectives = await ctx.db

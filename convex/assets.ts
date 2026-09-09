@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
 import { query } from "./_generated/server";
+import { requireAdmin } from "./lib/authz";
 import { MAX_SIBLINGS } from "./lib/ordering";
 import schema from "./schema";
 
@@ -28,6 +29,7 @@ export const adminDetail = query({
     isFeatured: v.boolean(),
   }),
   handler: async (ctx, args) => {
+    await requireAdmin(ctx);
     const module = await ctx.db
       .query("modules")
       .withIndex("by_slug", (q) => q.eq("slug", args.moduleSlug))

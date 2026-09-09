@@ -82,7 +82,7 @@ Cliffview Academy Hub — staff training and compliance portal for Cliffview Pri
 - Stack: TanStack Start (SSR, file-based routing), React 19, Tailwind v4, shadcn/ui on Radix, TanStack Query, Zod
 - Build: Vite via `@lovable.dev/vite-tanstack-config`; Nitro output preset is `vercel` when `VERCEL` is set, otherwise `node-server`
 - Backend: Convex (`convex@^1.45.0`), live on the **production** deployment `diligent-mink-756` with 18 tables seeded and the admin content reads wired into the React app. See `convex/AGENTS.md` for the deployment and consent contract, `ADMIN_BACKEND.md` for the build phases
-- No auth yet (Phase 4) and no write path yet (Phase 5): sign-in and every admin write dialog are still UI-only. Admin content screens read from Convex; the admin overview, staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
+- Auth is live: Convex Auth (email + password) gates the admin console, and every admin query calls `requireAdmin`. Sign-in is real; admin write dialogs are still UI-only until Phase 5. Admin screens read from Convex and are client-rendered behind the gate; staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
 - Architecture is Clean Architecture; the dependency rule is enforced by convention, documented in `src/AGENTS.md`. Reference material: `clean-architecture-expert/SKILL.md`
 
 ## Repo-Wide Rules
@@ -92,7 +92,7 @@ Cliffview Academy Hub — staff training and compliance portal for Cliffview Pri
 - Never edit `dist/`, `.output/`, `.tanstack/`, or `node_modules/`
 - `public/` holds only brand assets referenced from `src/routes/__root.tsx` (`favicon.jpg`, `logo.jpg`, `og-image.svg`). Keep filenames stable or update the head config
 - Convex commands run against production. Announce the target before any deployment-affecting command and get a fresh explicit yes in the current session before anything that writes to prod. Full rules in `convex/AGENTS.md`
-- Never write to `.env.local` without saying what changes; it is gitignored via `*.local`
+- Never write to `.env.local` without saying what changes; it is gitignored via `*.local`. `CONVEX_PREVIEW_DEPLOY_KEY` lives there deliberately **not** named `CONVEX_DEPLOY_KEY`: the CLI picks its target from that name, so a preview key under it would silently redirect `convex deploy` and stop `convex dev` running at all
 - Do not commit unless the user asks
 - `MODULE_UI_PHASES.md` tracks phased UI work and its own completion rules. Phases 1-3 are done; Phase 4 (final integration and verification) is open. Update its checkboxes when you finish a phase
 - `ADMIN_BACKEND.md` tracks the phased Convex admin-backend build (Phases 0-8, one consent gate per prod-affecting step) and carries the locked architecture decisions. It is the execution contract for that work: tick tasks and verification items as you go, and complete each phase's DOX pass before checking the phase off

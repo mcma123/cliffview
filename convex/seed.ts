@@ -359,7 +359,7 @@ export const run = internalMutation({
 
       const existingUser = await ctx.db
         .query("users")
-        .withIndex("by_email", (q) => q.eq("email", user.email))
+        .withIndex("email", (q) => q.eq("email", user.email))
         .unique();
 
       let userId: Id<"users">;

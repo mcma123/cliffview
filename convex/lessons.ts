@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
 import { query } from "./_generated/server";
+import { requireAdmin } from "./lib/authz";
 import { MAX_SIBLINGS } from "./lib/ordering";
 import schema from "./schema";
 
@@ -12,12 +13,11 @@ import schema from "./schema";
  * to every non-video asset in the module whenever the join was empty or
  * dangling, so a brand-new lesson claimed three attachments it never had.
  *
- * AUTHORIZATION: these are public and unauthenticated for now. They return
- * module content only — titles, copy, publish state, lesson prose — with no
- * personal, financial or audit data, and the learner side reads the same
- * content. Phase 4 adds `requireStaff` once an auth provider exists; until
- * then there is nothing to check against. Anything privileged stays an
- * `internalQuery` (see `convex/dashboard.ts`).
+ * AUTHORIZATION: `requireAdmin` on every entry point. These queries expose
+ * draft and archived content and the full asset list, so they are tighter than
+ * the plan's `requireStaff`: being signed in as staff is not the same as being
+ * allowed to see unpublished material. Learner-facing content queries arrive in
+ * Phase 8 and will filter on `publishState` instead.
  */
 export const adminDetail = query({
   args: { moduleSlug: v.string(), lessonSlug: v.string() },
@@ -30,6 +30,7 @@ export const adminDetail = query({
     heroAsset: v.union(schema.doc("assets"), v.null()),
   }),
   handler: async (ctx, args) => {
+    await requireAdmin(ctx);
     const module = await ctx.db
       .query("modules")
       .withIndex("by_slug", (q) => q.eq("slug", args.moduleSlug))

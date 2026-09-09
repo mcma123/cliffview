@@ -1,3 +1,4 @@
+import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -32,9 +33,22 @@ import {
  *    parent document where they can silently disagree.
  *
  * Index names list every field in order, per Convex convention:
- * ["moduleId", "order"] becomes by_moduleId_and_order.
+ * ["moduleId", "order"] becomes by_moduleId_and_order. The one exception is
+ * `users.email`, which Convex Auth queries by the literal index name `email`.
  */
 export default defineSchema({
+  // ---------------------------------------------------------------------------
+  // Authentication
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Convex Auth tables: authSessions, authAccounts, authRefreshTokens,
+   * authVerificationCodes, authVerifiers, authRateLimits. `users` is spread in
+   * here too and then deliberately overridden below, because our staff profile
+   * is the auth user — see the note on that table.
+   */
+  ...authTables,
+
   // ---------------------------------------------------------------------------
   // People and organisation
   // ---------------------------------------------------------------------------
@@ -51,6 +65,20 @@ export default defineSchema({
     isActive: v.boolean(),
   }).index("by_order", ["order"]),
 
+  /**
+   * Staff profiles, and simultaneously the Convex Auth user table.
+   *
+   * They are one table on purpose. Convex Auth wants a `users` table it can
+   * link accounts to, and a school already has exactly one list of people. The
+   * `createOrUpdateUser` callback in `convex/auth.ts` never inserts here — it
+   * resolves a sign-in to a pre-provisioned row by email and returns that id,
+   * so our required fields can stay required and nobody can self-register into
+   * the school.
+   *
+   * The optional `name` / `image` / `phone` / verification-time / `isAnonymous`
+   * fields and the index literally named `email` are Convex Auth requirements,
+   * not ours.
+   */
   users: defineTable({
     // Name parts are split. The seed baked the honorific into `lastName`
     // ("Priya" / "Ms. Naidoo"), forcing a string-replace chain to get initials.
@@ -76,14 +104,26 @@ export default defineSchema({
     compliancePercent: v.number(),
     lastActiveAt: v.optional(v.number()),
     /**
-     * `identity.tokenIdentifier` from `ctx.auth.getUserIdentity()`, the
-     * canonical stable identity key. Optional until Phase 4 links seeded
-     * profiles to auth users.
+     * Time-boxed permission for an admin row to be claimed by a sign-up.
+     *
+     * Admin profiles never self-claim: without email verification configured,
+     * anyone who knew an admin address could otherwise become that admin. An
+     * operator opens a short window with `internal.auth.allowAdminClaim`, and
+     * the claim clears it. Staff rows need none of this.
      */
-    authTokenIdentifier: v.optional(v.string()),
+    adminClaimAllowedUntil: v.optional(v.number()),
+
+    // --- Convex Auth's own optional user fields ---
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
   })
-    .index("by_email", ["email"])
-    .index("by_authTokenIdentifier", ["authTokenIdentifier"])
+    // Convex Auth looks this index up by the literal name `email`.
+    .index("email", ["email"])
+    .index("phone", ["phone"])
     .index("by_phaseId_and_employmentStatus", ["phaseId", "employmentStatus"])
     .index("by_accessRole", ["accessRole"])
     .index("by_employmentStatus_and_xpTotal", ["employmentStatus", "xpTotal"]),

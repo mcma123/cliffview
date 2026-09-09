@@ -1,6 +1,5 @@
 import {
   applyAiReviewDecision,
-  getAdminOverview,
   getAdminStaffDirectory,
   getAdminStaffDetail,
   getAiReviewQueue,
@@ -21,7 +20,6 @@ export const academyQueries = {
   getModuleExperience: (slug: string) => getModuleExperience(academyRepository, slug),
   getModuleLessonExperience: (slug: string, lessonId: string) =>
     getModuleLessonExperience(academyRepository, slug, lessonId),
-  getAdminOverview: () => getAdminOverview(academyRepository),
   getAdminStaffDirectory: () => getAdminStaffDirectory(academyRepository),
   getAdminStaffDetail: (staffId: string) => getAdminStaffDetail(academyRepository, staffId),
   getAiReviewQueue: () => getAiReviewQueue(academyRepository),

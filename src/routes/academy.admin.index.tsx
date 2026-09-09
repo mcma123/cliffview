@@ -1,11 +1,16 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { presentAdminOverview } from "@/application/academy/presenters";
+import { api } from "../../convex/_generated/api";
 import { Users, BookOpen, TrendingUp, Sparkles, ChevronDown } from "lucide-react";
 
 export const Route = createFileRoute("/academy/admin/")({
   head: () => ({ meta: [{ title: "SMT Admin · Cliffview Academy" }] }),
-  loader: () => academyQueries.getAdminOverview(),
+  // No prefetch: adminOverview requires an admin identity and Convex Auth has
+  // no token on the server. The admin gate renders this only once signed in.
+  loader: () => ({ now: Date.now() }),
   component: AdminOverview,
 });
 
@@ -17,7 +22,9 @@ const statIcons = {
 } as const;
 
 function AdminOverview() {
-  const data = Route.useLoaderData();
+  const { now } = Route.useLoaderData();
+  const { data: overview } = useSuspenseQuery(convexQuery(api.dashboard.adminOverview, { now }));
+  const data = presentAdminOverview(overview, now);
 
   return (
     <AdminShell>
@@ -99,7 +106,7 @@ function AdminOverview() {
             </p>
             <div className="mt-6 flex h-48 items-end gap-3">
               {data.completionTrend.map((point) => (
-                <div key={point.month} className="flex flex-1 flex-col items-center gap-2">
+                <div key={point.monthKey} className="flex flex-1 flex-col items-center gap-2">
                   <div className="relative flex w-full flex-1 items-end">
                     <div
                       className="w-full rounded-t-lg bg-gradient-to-t from-primary to-primary/70 transition-all hover:from-gold hover:to-gold/70"

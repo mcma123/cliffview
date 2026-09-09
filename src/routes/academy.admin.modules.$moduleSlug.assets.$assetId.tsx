@@ -9,17 +9,10 @@ import { ArrowLeft, Eye, FileText, Headphones, Upload, Video } from "lucide-reac
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/assets/$assetId")({
   head: () => ({ meta: [{ title: "Asset Editor · Cliffview Academy" }] }),
-  loader: async ({ context, params }) => {
-    // $assetId is a Convex document id now. The old ids were derived from the
-    // module slug, which broke as soon as a module had two videos.
-    await context.queryClient.ensureQueryData(
-      convexQuery(api.assets.adminDetail, {
-        moduleSlug: params.moduleSlug,
-        assetId: params.assetId as Id<"assets">,
-      }),
-    );
-    return { now: Date.now() };
-  },
+  // No loader prefetch: Convex Auth keeps its token in localStorage, so there
+  // is no identity on the server and a prefetched gated query would be held
+  // forever. This screen is client-rendered behind the admin gate.
+  loader: () => ({ now: Date.now() }),
   component: AdminAssetEditor,
 });
 

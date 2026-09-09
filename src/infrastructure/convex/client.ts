@@ -30,10 +30,15 @@ export function createConvexClients(): {
   }
 
   const convexQueryClient = new ConvexQueryClient(url, {
-    // Phase 4: set to true once an auth provider exists, so unauthenticated
-    // queries are held rather than sent. Today there is no provider, and
-    // blocking queries would make every admin screen hang.
-    expectAuth: false,
+    // Hold queries until a token is attached rather than firing them
+    // unauthenticated and having every gated query throw. `ConvexAuthProvider`
+    // in `src/routes/__root.tsx` supplies the token.
+    //
+    // This is also why admin routes no longer prefetch in their loaders:
+    // Convex Auth keeps its token in localStorage, so there is no identity on
+    // the server and a server-side query would be held forever. Admin screens
+    // are client-rendered behind the gate in `src/routes/academy.admin.tsx`.
+    expectAuth: true,
   });
 
   const queryClient = new QueryClient({

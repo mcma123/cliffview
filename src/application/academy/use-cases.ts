@@ -272,41 +272,6 @@ export function getModuleLessonExperience(repo: AcademyRepository, slug: string,
   };
 }
 
-export function getAdminOverview(repo: AcademyRepository) {
-  const snapshot = repo.getAdminDashboardSnapshot();
-  const trendMax = Math.max(...snapshot.completionTrend.map((point) => point.completedModules));
-
-  return {
-    dateLabel: snapshot.dateLabel,
-    stats: [
-      {
-        label: "Total Staff",
-        value: `${snapshot.totalStaff}`,
-        sub: `+${snapshot.activeAccountsDelta} active accounts`,
-      },
-      {
-        label: "Modules Completed",
-        value: `${snapshot.completedModules}`,
-        sub: `+${snapshot.completedModulesDelta} this month`,
-      },
-      {
-        label: "Avg. Compliance",
-        value: `${snapshot.averageCompliancePercent}%`,
-        sub: `+${snapshot.averageComplianceDeltaPercent}% across all staff`,
-      },
-      {
-        label: "Pending AI Review",
-        value: `${snapshot.pendingAiReviewCount}`,
-        sub: "Action questions queued",
-        actionHref: "/academy/admin/ai-review",
-      },
-    ],
-    phases: snapshot.phases,
-    completionTrend: snapshot.completionTrend,
-    trendMax,
-  };
-}
-
 export function getAiReviewQueue(repo: AcademyRepository) {
   const questions = repo.listAiReviewQuestions();
 

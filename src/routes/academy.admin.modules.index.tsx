@@ -8,12 +8,10 @@ import { BookOpen, FileText, Plus, Search, Sparkles, Video } from "lucide-react"
 
 export const Route = createFileRoute("/academy/admin/modules/")({
   head: () => ({ meta: [{ title: "Module Admin · Cliffview Academy" }] }),
-  loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(convexQuery(api.modules.listForAdmin, {}));
-    // `now` is captured per request so relative labels are stable for a render
-    // and the query itself stays free of wall-clock reads.
-    return { now: Date.now() };
-  },
+  // No loader prefetch: Convex Auth keeps its token in localStorage, so there
+  // is no identity on the server and a prefetched gated query would be held
+  // forever. This screen is client-rendered behind the admin gate.
+  loader: () => ({ now: Date.now() }),
   component: AdminModuleLibrary,
 });
 

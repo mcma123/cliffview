@@ -17,6 +17,7 @@ import type { api } from "../../../convex/_generated/api";
  * and testable and matches the backend rule against wall-clock reads.
  */
 
+type AdminOverview = FunctionReturnType<typeof api.dashboard.adminOverview>;
 type ModuleLibrary = FunctionReturnType<typeof api.modules.listForAdmin>;
 type ModuleDetail = FunctionReturnType<typeof api.modules.adminDetail>;
 type LessonDetail = FunctionReturnType<typeof api.lessons.adminDetail>;
@@ -145,6 +146,74 @@ export function getLessonPreviewHref(moduleSlug: string, lessonSlug: string): st
 // ---------------------------------------------------------------------------
 // Screen presenters
 // ---------------------------------------------------------------------------
+
+/**
+ * The SMT compliance overview.
+ *
+ * Every tile is derived. The old view-model carried four "+N this month"
+ * deltas that were literals; a delta needs a past value, so a tile only gets a
+ * `sub` line when the backend actually has one to compare against.
+ */
+export function presentAdminOverview(data: AdminOverview, now: number) {
+  const complianceDelta =
+    data.previousAverageCompliancePercent === null
+      ? null
+      : data.averageCompliancePercent - data.previousAverageCompliancePercent;
+
+  return {
+    dateLabel: new Date(now).toLocaleDateString("en-ZA", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }),
+    stats: [
+      {
+        label: "Total Staff",
+        value: `${data.totalStaff}`,
+        sub: "active staff accounts",
+      },
+      {
+        label: "Modules Completed",
+        value: `${data.completedModules}`,
+        sub: "all time, across all staff",
+      },
+      {
+        label: "Avg. Compliance",
+        value: `${data.averageCompliancePercent}%`,
+        // Signed, and only when a prior month was actually recorded.
+        sub:
+          complianceDelta === null
+            ? "across active staff"
+            : `${complianceDelta >= 0 ? "+" : ""}${complianceDelta}% vs last month`,
+      },
+      {
+        label: "Pending AI Review",
+        value: `${data.pendingAiReviewCount}`,
+        sub:
+          data.editedAiReviewCount > 0
+            ? `${data.editedAiReviewCount} edited so far`
+            : "questions awaiting review",
+        actionHref: "/academy/admin/ai-review",
+      },
+    ],
+    // Phases with nobody in them still render, at 0%, rather than being hidden:
+    // an empty phase is a real fact about the school.
+    phases: data.phases.map((phase) => ({
+      name: phase.name,
+      completionPercent: phase.completionPercent,
+      staffCount: phase.staffCount,
+    })),
+    completionTrend: data.completionTrend.map((point) => ({
+      monthKey: point.monthKey,
+      month: formatMonthShort(point.monthKey),
+      completedModules: point.completedModules,
+    })),
+    // Guard the divisor: an all-zero trend would otherwise divide by zero and
+    // render NaN-height bars.
+    trendMax: Math.max(1, ...data.completionTrend.map((p) => p.completedModules)),
+  };
+}
 
 export function presentAdminModuleLibrary(rows: ModuleLibrary, now: number) {
   return {

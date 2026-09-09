@@ -1,26 +1,24 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /**
  * The single authorization choke point.
  *
- * Two rules, both from Convex guidance and both non-negotiable:
+ * Identity is always derived server-side. A user id is NEVER accepted as a
+ * function argument for authorization — `getAuthUserId` reads it out of the
+ * verified token, so a caller cannot claim to be someone else.
  *
- * - Identity is always derived server-side from `ctx.auth.getUserIdentity()`.
- *   A user id is NEVER accepted as a function argument for authorization.
- * - `identity.tokenIdentifier` is the canonical stable key, not
- *   `identity.subject`.
- *
- * Until Phase 4 wires an auth provider there is no `convex/auth.config.ts`, so
- * `getUserIdentity()` returns null and every `require*` helper here throws.
- * That is deliberate: it means no mutation can be written without an
- * authorization call, and none can be reached before the guard exists.
+ * The staff profile *is* the auth user (see the `users` note in
+ * `convex/schema.ts`), so an authenticated id resolves to a profile with one
+ * `get` and no join table. `convex/auth.ts` guarantees that link can only point
+ * at a pre-provisioned row.
  */
 
 export type Actor = {
-  tokenIdentifier: string;
+  userId: Id<"users">;
   user: Doc<"users">;
 };
 
@@ -28,22 +26,17 @@ export type Actor = {
 const ADMIN_ROLES = new Set<Doc<"users">["accessRole"]>(["smt_admin", "super_admin"]);
 
 /**
- * Resolve the calling identity to a staff record, or null when unauthenticated
- * or unlinked. Read-only and safe to call from queries.
+ * Resolve the calling identity to a staff record, or null when unauthenticated.
+ * Read-only and safe to call from queries.
  */
 export async function getActor(ctx: QueryCtx | MutationCtx): Promise<Actor | null> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity === null) return null;
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) return null;
 
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_authTokenIdentifier", (q) =>
-      q.eq("authTokenIdentifier", identity.tokenIdentifier),
-    )
-    .unique();
+  const user = await ctx.db.get("users", userId);
   if (user === null) return null;
 
-  return { tokenIdentifier: identity.tokenIdentifier, user };
+  return { userId, user };
 }
 
 /** Any active staff member. Throws otherwise. */

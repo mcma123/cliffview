@@ -35,7 +35,7 @@ export async function recordAudit(
     entityTable: args.entityTable,
     entityId: args.entityId,
     at: Date.now(),
-    ...(args.actor === null ? {} : { actorId: args.actor.tokenIdentifier }),
+    ...(args.actor === null ? {} : { actorId: args.actor.userId }),
     ...(args.summary === undefined ? {} : { summary: args.summary }),
   });
 }

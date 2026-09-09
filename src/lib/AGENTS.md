@@ -12,6 +12,8 @@ Framework-adjacent utilities: class merging, server-only config, the SSR error-r
 
 ## Local Contracts
 
+- There is no auth module here. Convex Auth needs none: the server config lives in `convex/auth.ts` and `convex/auth.config.ts`, its HTTP endpoints are served from the deployment's `.site` domain via `convex/http.ts`, and the client hooks (`useAuthActions`, `useConvexAuth`) come straight from `@convex-dev/auth/react`. Do not add an `/api/auth/*` route or an auth client wrapper — the browser talks to Convex directly
+
 - `utils.ts` exports `cn()` (clsx + tailwind-merge) and stays dependency-light. Do not grow it into a grab-bag
 - `config.server.ts` is server-only by virtue of the `.server.ts` suffix. Read `process.env` inside `getServerConfig()`, never at module scope — on Cloudflare Workers env binds at request time and module-scope reads are `undefined`. Secrets go here; anything named `VITE_*` is public and ships to the browser
 - Never import the Next.js `server-only` package; ESLint's `no-restricted-imports` rule blocks it with the correct alternative

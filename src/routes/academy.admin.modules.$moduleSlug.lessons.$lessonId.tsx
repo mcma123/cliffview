@@ -11,17 +11,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons/$lessonId")({
   head: () => ({ meta: [{ title: "Lesson Editor · Cliffview Academy" }] }),
-  loader: async ({ context, params }) => {
-    // $lessonId now carries the module-scoped lesson slug, which is what the
-    // seeded slugs are, so existing lesson URLs keep working.
-    await context.queryClient.ensureQueryData(
-      convexQuery(api.lessons.adminDetail, {
-        moduleSlug: params.moduleSlug,
-        lessonSlug: params.lessonId,
-      }),
-    );
-    return null;
-  },
+  // No loader prefetch: Convex Auth keeps its token in localStorage, so there
+  // is no identity on the server and a prefetched gated query would be held
+  // forever. This screen is client-rendered behind the admin gate.
   component: AdminLessonEditor,
 });
 

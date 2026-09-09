@@ -23,12 +23,10 @@ import { AttachContentDialog } from "@/components/attach-content-dialog";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/")({
   head: () => ({ meta: [{ title: "Edit Module · Cliffview Academy" }] }),
-  loader: async ({ context, params }) => {
-    await context.queryClient.ensureQueryData(
-      convexQuery(api.modules.adminDetail, { slug: params.moduleSlug }),
-    );
-    return { now: Date.now() };
-  },
+  // No loader prefetch: Convex Auth keeps its token in localStorage, so there
+  // is no identity on the server and a prefetched gated query would be held
+  // forever. This screen is client-rendered behind the admin gate.
+  loader: () => ({ now: Date.now() }),
   component: AdminModuleDetail,
 });
 

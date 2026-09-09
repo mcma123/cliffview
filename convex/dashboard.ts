@@ -1,21 +1,17 @@
 import { v } from "convex/values";
 
-import { internalQuery } from "./_generated/server";
+import { query } from "./_generated/server";
+import { requireAdmin } from "./lib/authz";
 import { COUNTER, MAX_PHASES, MAX_STAFF, TREND_MONTHS, readCounter } from "./lib/counts";
 import { earliestMonthKey, monthKeyFromMs, monthKeysBack } from "./lib/time";
 
 /**
  * The SMT compliance overview.
  *
- * AUTHORIZATION: this is an `internalQuery`, so it is NOT reachable from the
- * client. That is deliberate. It reads the `users` table and returns
- * school-wide compliance aggregates, which is privileged, and there is no auth
- * provider until Phase 4 — so `requireAdmin` here would throw for every caller
- * and gating it now is not an option. Rather than publish a privileged read
- * unauthenticated, it stays internal (runnable via `npx convex run` for
- * verification) until Phase 4 turns it into a public `query` behind
- * `requireAdmin`. The overview screen is therefore wired in Phase 4, not
- * Phase 3.
+ * AUTHORIZATION: `requireAdmin`. It reads the `users` table and returns
+ * school-wide compliance aggregates, so it is admin-only. It was an
+ * `internalQuery` until an auth provider existed to gate it against, which is
+ * why the overview screen is wired in Phase 4 rather than Phase 3.
  *
  * Every number here is derived from rows or read from a counter maintained in
  * the same transaction as the write it counts. The old snapshot was a literal:
@@ -27,7 +23,7 @@ import { earliestMonthKey, monthKeyFromMs, monthKeysBack } from "./lib/time";
  * advanced, so a wall-clock read here would go stale and would also defeat
  * query-cache reuse.
  */
-export const adminOverview = internalQuery({
+export const adminOverview = query({
   args: { now: v.number() },
   returns: v.object({
     totalStaff: v.number(),
@@ -59,6 +55,7 @@ export const adminOverview = internalQuery({
     previousAverageCompliancePercent: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, args) => {
+    await requireAdmin(ctx);
     // One bounded scan over active staff answers headcount, the school-wide
     // average, and the per-phase breakdown. Staff per school is small by
     // design, so this stays cheaper than a scan per phase.

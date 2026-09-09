@@ -1,6 +1,6 @@
 import type { ConvexQueryClient } from "@convex-dev/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConvexProvider } from "convex/react";
+import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import {
   Outlet,
   Link,
@@ -142,14 +142,16 @@ function RootComponent() {
   const { queryClient, convexQueryClient } = Route.useRouteContext();
 
   return (
-    // ConvexProvider must sit at or above QueryClientProvider: Convex hooks in
-    // route components resolve their client from this context.
-    <ConvexProvider client={convexQueryClient.convexClient}>
+    // ConvexAuthProvider both supplies the Convex client to hooks and owns the
+    // auth token, which it keeps in localStorage and pushes into the client. It
+    // must sit at or above QueryClientProvider so route components resolve both
+    // from context.
+    <ConvexAuthProvider client={convexQueryClient.convexClient}>
       <QueryClientProvider client={queryClient}>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
         <Toaster position="bottom-right" />
       </QueryClientProvider>
-    </ConvexProvider>
+    </ConvexAuthProvider>
   );
 }

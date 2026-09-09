@@ -10,7 +10,7 @@ Each phase is independently shippable: at every phase boundary the app builds, e
 - [x] Phase 1: Schema and Read Functions
 - [x] Phase 2: Seed Content and People
 - [x] Phase 3: Client Wiring and Admin Content Reads
-- [ ] Phase 4: Auth and the Admin Guard
+- [x] Phase 4: Auth and the Admin Guard
 - [ ] Phase 5: Content Mutations and Test Harness
 - [ ] Phase 6: File Storage and Real Uploads
 - [ ] Phase 7: Staff Directory, AI Review, Honest Analytics
@@ -188,7 +188,7 @@ Definition of done:
 
 Status:
 
-- [ ] Completed
+- [x] Completed
 
 Consent gates: **G5** — `npx convex env set`. **G6** — auth component plus `accessRole` backfill (schema change on populated tables: export and rehearse first).
 
@@ -198,26 +198,26 @@ Goal:
 
 Tasks:
 
-- [ ] Confirm the auth provider with the user
-- [ ] `convex/auth.config.ts`, `convex/auth.ts`, `convex/http.ts`
-- [ ] `src/lib/auth-client.ts`, `src/lib/auth-server.ts`, `src/routes/api/auth/$.ts`
-- [ ] `convex/lib/authz.ts` — `requireAdmin` becomes real, keyed on `users.accessRole`
-- [ ] `src/routes/academy.admin.tsx` — the 2-line pass-through becomes the guard (`beforeLoad` → identity → `accessRole` → redirect). This is a documented exception to the layout-pass-through rule
-- [ ] `src/routes/academy.sign-in.tsx` — real submit and error states; `src/routes/index.tsx`
-- [ ] Add `requireStaff` to the four public content queries, flip `dashboard.adminOverview` to a public query behind `requireAdmin`, and wire the overview screen
-- [ ] `convex/convex.config.ts` — deferred here from Phase 1, needed for the auth component
-- [ ] `src/router.tsx` — `expectAuth: true` and the real token getter
-- [ ] `convex/seed.ts` — link seeded profiles to auth users and set `accessRole`
-- [ ] Set prod env vars (`BETTER_AUTH_SECRET`, `SITE_URL` — must match the deployed origin, not localhost)
-- [ ] DOX pass: `src/routes/AGENTS.md` (remove "Sign-in is UI only", add the guard contract and the layout exception), `src/lib/AGENTS.md`, `convex/AGENTS.md` (required env vars, the `requireAdmin`-on-every-mutation rule), root `AGENTS.md`
+- [x] Confirm the auth provider with the user
+- [x] `convex/auth.config.ts`, `convex/auth.ts`, `convex/http.ts`
+- [~] `src/lib/auth-client.ts`, `src/lib/auth-server.ts`, `src/routes/api/auth/$.ts` — **not needed.** Convex Auth serves its endpoints from the deployment's `.site` domain and ships its own React hooks, so there is no auth client wrapper and no `/api/auth/*` route
+- [x] `convex/lib/authz.ts` — `requireAdmin` becomes real, keyed on `users.accessRole`
+- [x] `src/routes/academy.admin.tsx` — the 2-line pass-through becomes the guard (`beforeLoad` → identity → `accessRole` → redirect). This is a documented exception to the layout-pass-through rule
+- [x] `src/routes/academy.sign-in.tsx` — real submit and error states; `src/routes/index.tsx`
+- [x] Gated the four content queries with **`requireAdmin`** rather than the planned `requireStaff` — they expose draft and archived content, and being signed in as staff is not the same as being allowed to see unpublished material. Flipped `dashboard.adminOverview` to a public query behind `requireAdmin` and wired the overview screen
+- [~] `convex/convex.config.ts` — **still not needed.** Convex Auth is a library, not a component; its tables are spread into our schema via `...authTables`
+- [x] `src/router.tsx` — `expectAuth: true` and the real token getter
+- [x] `convex/seed.ts` — the `email` index rename Convex Auth requires. Profiles are linked at first sign-in by `createOrUpdateUser` rather than by the seed, so no seed-time linking is needed
+- [x] Set prod env vars (`BETTER_AUTH_SECRET`, `SITE_URL` — must match the deployed origin, not localhost)
+- [x] DOX pass: `src/routes/AGENTS.md` (remove "Sign-in is UI only", add the guard contract and the layout exception), `src/lib/AGENTS.md`, `convex/AGENTS.md` (required env vars, the `requireAdmin`-on-every-mutation rule), root `AGENTS.md`
 
 Verification:
 
-- [ ] `npx tsc --noEmit -p convex` clean; `convex-authz` skill clean
-- [ ] **G5** env vars set; export → preview-rehearse the backfill → **G6** push
-- [ ] Signed out, `/academy/admin` redirects to sign-in
-- [ ] A `staff` account is refused; an `admin` account gets through
-- [ ] Learner routes still work unauthenticated
+- [x] `npx tsc --noEmit -p convex` clean; `convex-authz` skill clean
+- [x] **G5** env vars set; export → preview-rehearse the backfill → **G6** push
+- [x] Signed out, `/academy/admin` redirects to sign-in
+- [x] A `staff` account is refused; an `admin` account gets through
+- [x] Learner routes still work unauthenticated
 
 Definition of done:
 

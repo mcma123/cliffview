@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Mail, KeyRound, Eye, ArrowRight, Lock, CheckCircle2, Sparkles } from "lucide-react";
 import { CliffviewShield } from "@/components/cliffview-logo";
 import { useState } from "react";
@@ -10,6 +11,37 @@ export const Route = createFileRoute("/academy/sign-in")({
 
 function SignInPage() {
   const [show, setShow] = useState(false);
+  const { signIn } = useAuthActions();
+  const navigate = useNavigate();
+  // "signUp" is the first-time claim of a pre-provisioned profile; "signIn" is
+  // every visit after. Convex Auth refuses a signUp whose email is not already
+  // a staff row, so this toggle cannot create a new person.
+  const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setPending(true);
+    const formData = new FormData(event.currentTarget);
+    formData.set("flow", flow);
+    try {
+      await signIn("password", formData);
+      await navigate({ to: "/academy/dashboard" });
+    } catch (caught) {
+      // Convex Auth surfaces our ConvexError messages from
+      // `createOrUpdateUser` here — the not-provisioned, inactive and
+      // admin-claim-closed refusals.
+      const message =
+        caught instanceof Error && caught.message.length > 0
+          ? caught.message
+          : "We could not sign you in. Check your email and password and try again.";
+      setError(message.replace(/^\[.*?\]\s*/, ""));
+    } finally {
+      setPending(false);
+    }
+  }
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8 lg:p-12">
       <div className="mx-auto grid max-w-6xl overflow-hidden rounded-3xl bg-card shadow-2xl lg:grid-cols-2">
@@ -46,7 +78,7 @@ function SignInPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in with your Cliffview email to continue.
           </p>
-          <form className="mt-8 space-y-5">
+          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
             <div>
               <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 School Email
@@ -55,7 +87,10 @@ function SignInPage() {
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <input
                   type="email"
-                  defaultValue="m.naidoo@cliffview.co.za"
+                  name="email"
+                  required
+                  autoComplete="email"
+                  placeholder="you@cliffview.example"
                   className="flex-1 bg-transparent text-sm text-foreground outline-none"
                 />
               </div>
@@ -68,7 +103,10 @@ function SignInPage() {
                 <KeyRound className="h-4 w-4 text-muted-foreground" />
                 <input
                   type={show ? "text" : "password"}
-                  defaultValue="cliffview2026"
+                  name="password"
+                  required
+                  minLength={8}
+                  autoComplete={flow === "signIn" ? "current-password" : "new-password"}
                   className="flex-1 bg-transparent text-sm text-foreground outline-none"
                 />
                 <button type="button" onClick={() => setShow((v) => !v)}>
@@ -89,15 +127,36 @@ function SignInPage() {
                 Forgot password?
               </a>
             </div>
-            <Link
-              to="/academy/dashboard"
-              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.01] hover:bg-primary-deep"
+            {error !== null && (
+              <p
+                role="alert"
+                className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={pending}
+              className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.01] hover:bg-primary-deep disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Sign In
+              {pending ? "Signing in…" : flow === "signIn" ? "Sign In" : "Create my password"}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Link>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFlow((f) => (f === "signIn" ? "signUp" : "signIn"));
+                setError(null);
+              }}
+              className="w-full text-center text-xs font-semibold text-gold hover:underline"
+            >
+              {flow === "signIn"
+                ? "First time here? Set up your password"
+                : "Already set up? Sign in instead"}
+            </button>
             <p className="text-center text-xs italic text-muted-foreground">
-              Only @cliffview.co.za accounts can register.
+              Only staff already registered by the school can sign in.
             </p>
           </form>
         </div>
