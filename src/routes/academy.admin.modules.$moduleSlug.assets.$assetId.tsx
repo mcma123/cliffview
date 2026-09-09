@@ -1,5 +1,8 @@
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
+import type { ModuleAssetKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { presentAdminAssetDetail } from "@/application/academy/presenters";
@@ -26,6 +29,31 @@ function AdminAssetEditor() {
     }),
   );
   const data = presentAdminAssetDetail(detail, now);
+
+  const id = detail.asset._id;
+  const updateAsset = useMutation({ mutationFn: useConvexMutation(api.assets.update) });
+  const setAssetState = useMutation({ mutationFn: useConvexMutation(api.assets.setPublishState) });
+
+  const [form, setForm] = useState({
+    title: data.assetTitle,
+    kind: data.assetKind as ModuleAssetKind,
+    description: data.assetDescription,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const ASSET_KINDS: ModuleAssetKind[] = ["video", "audio", "document", "worksheet"];
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateAsset.mutateAsync({ assetId: id, ...form });
+      toast.success("Asset saved.");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not save the asset.");
+    } finally {
+      setSaving(false);
+    }
+  }
   const AssetIcon =
     data.assetKind === "audio" ? Headphones : data.assetKind === "video" ? Video : FileText;
 
@@ -78,7 +106,8 @@ function AdminAssetEditor() {
                   Asset title
                 </span>
                 <input
-                  defaultValue={data.assetTitle}
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -86,9 +115,19 @@ function AdminAssetEditor() {
                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Asset type
                 </span>
-                <div className="rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground">
-                  {data.assetKind}
-                </div>
+                <select
+                  value={form.kind}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, kind: e.target.value as ModuleAssetKind }))
+                  }
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm capitalize text-foreground outline-none focus:border-primary"
+                >
+                  {ASSET_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kind}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -107,8 +146,28 @@ function AdminAssetEditor() {
                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Publish state
                 </span>
-                <div className="rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground">
-                  {data.publishLabel}
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {data.publishLabel}
+                  </span>
+                  <button
+                    onClick={async () => {
+                      const next = data.publishState === "published" ? "draft" : "published";
+                      try {
+                        await setAssetState.mutateAsync({ assetId: id, publishState: next });
+                        toast.success(
+                          next === "published" ? "Asset published." : "Asset set to draft.",
+                        );
+                      } catch (caught) {
+                        toast.error(
+                          caught instanceof Error ? caught.message : "That did not work.",
+                        );
+                      }
+                    }}
+                    className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                  >
+                    {data.publishState === "published" ? "Move to draft" : "Publish asset"}
+                  </button>
                 </div>
               </label>
             </div>
@@ -118,7 +177,8 @@ function AdminAssetEditor() {
                 Learner-facing description
               </span>
               <textarea
-                defaultValue={data.assetDescription}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
               />
             </label>

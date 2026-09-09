@@ -20,15 +20,20 @@ function getFeaturedAsset(module: TrainingModule) {
   );
 }
 
+/**
+ * Resources for a module, or for one lesson within it.
+ *
+ * The silent fallback is gone. This used to return every non-video asset
+ * whenever a lesson had nothing attached, so a lesson with no resources
+ * reported three of them. A lesson with an empty `documentIds` now returns an
+ * empty list, and callers show an empty state.
+ */
 function getSupportingResources(module: TrainingModule, section?: ModuleSection) {
-  const resourceIds = new Set(section?.documentIds ?? []);
-  const filtered = section
-    ? module.resources.filter((resource) => resourceIds.has(resource.id))
-    : module.resources.filter((resource) => resource.kind !== "video");
-
-  return filtered.length > 0
-    ? filtered
-    : module.resources.filter((resource) => resource.kind !== "video");
+  if (section === undefined) {
+    return module.resources.filter((resource) => resource.kind !== "video");
+  }
+  const resourceIds = new Set(section.documentIds ?? []);
+  return module.resources.filter((resource) => resourceIds.has(resource.id));
 }
 
 export function getStaffDashboard(repo: AcademyRepository) {

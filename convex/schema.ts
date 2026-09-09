@@ -285,7 +285,9 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("by_userId_and_lessonId", ["userId", "lessonId"])
-    .index("by_userId_and_moduleId", ["userId", "moduleId"]),
+    .index("by_userId_and_moduleId", ["userId", "moduleId"])
+    // Needed so deleting a lesson can clear its progress rows.
+    .index("by_lessonId", ["lessonId"]),
 
   assessmentAttempts: defineTable({
     userId: v.id("users"),

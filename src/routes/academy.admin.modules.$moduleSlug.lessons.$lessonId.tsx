@@ -1,5 +1,7 @@
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import type { ModuleLessonKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { presentAdminLessonDetail } from "@/application/academy/presenters";
@@ -23,6 +25,69 @@ function AdminLessonEditor() {
     convexQuery(api.lessons.adminDetail, { moduleSlug, lessonSlug: lessonId }),
   );
   const data = presentAdminLessonDetail(detail);
+
+  const lessonDocId = detail.lesson._id;
+  const updateLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.update) });
+  const setLessonState = useMutation({
+    mutationFn: useConvexMutation(api.lessons.setPublishState),
+  });
+  const detachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.detachAsset) });
+  const attachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.attachAsset) });
+
+  // Every asset on the module, flagged with whether this lesson already has it,
+  // so the picker can hide the ones that are attached.
+  const attachedIds = new Set(data.linkedResources.map((r) => r.id));
+  const attachable = detail.moduleAssets.map((asset) => ({
+    id: asset._id,
+    title: asset.title,
+    kind: asset.kind,
+    meta: asset.metaNote ?? "No file attached",
+    alreadyAttached: attachedIds.has(asset._id),
+  }));
+
+  // Unauthored optional fields stay empty strings in the form and are sent as
+  // empty, which the mutation reads as "clear this" rather than storing a blank
+  // as content.
+  const [form, setForm] = useState({
+    title: data.lessonTitle,
+    kind: data.kind as ModuleLessonKind,
+    durationMinutes: data.durationMinutes === null ? "" : `${data.durationMinutes}`,
+    summary: data.summary,
+    scenarioTitle: data.scenarioTitle ?? "",
+    scenarioBody: data.scenarioBody ?? "",
+    reflectionPrompt: data.reflectionPrompt ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const LESSON_KINDS: ModuleLessonKind[] = [
+    "video",
+    "audio",
+    "reading",
+    "case-study",
+    "assessment",
+  ];
+
+  async function save() {
+    setSaving(true);
+    try {
+      const minutes = form.durationMinutes.trim();
+      await updateLesson.mutateAsync({
+        lessonId: lessonDocId,
+        title: form.title,
+        kind: form.kind,
+        summary: form.summary,
+        scenarioTitle: form.scenarioTitle,
+        scenarioBody: form.scenarioBody,
+        reflectionPrompt: form.reflectionPrompt,
+        ...(minutes.length === 0 ? {} : { durationMinutes: Number(minutes) }),
+      });
+      toast.success("Lesson saved.");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not save the lesson.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <AdminShell>
@@ -52,12 +117,36 @@ function AdminLessonEditor() {
               <Eye className="h-4 w-4" /> Preview
             </Link>
             <button
-              onClick={() => toast.success("Lesson content saved successfully")}
+              onClick={save}
+              disabled={saving}
               className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
             >
-              <Save className="h-4 w-4" /> Save changes
+              <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save changes"}
             </button>
           </div>
+        </div>
+
+        <div className="mb-2 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Lesson state
+          </span>
+          <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            {data.publishLabel}
+          </span>
+          <button
+            onClick={async () => {
+              const next = data.publishState === "published" ? "draft" : "published";
+              try {
+                await setLessonState.mutateAsync({ lessonId: lessonDocId, publishState: next });
+                toast.success(next === "published" ? "Lesson published." : "Lesson set to draft.");
+              } catch (caught) {
+                toast.error(caught instanceof Error ? caught.message : "That did not work.");
+              }
+            }}
+            className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+          >
+            {data.publishState === "published" ? "Move to draft" : "Publish lesson"}
+          </button>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -69,7 +158,8 @@ function AdminLessonEditor() {
                   Lesson title
                 </span>
                 <input
-                  defaultValue={data.lessonTitle}
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -78,16 +168,27 @@ function AdminLessonEditor() {
                   <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Lesson type
                   </span>
-                  <div className="rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground">
-                    {data.kind}
-                  </div>
+                  <select
+                    value={form.kind}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, kind: e.target.value as ModuleLessonKind }))
+                    }
+                    className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm capitalize text-foreground outline-none focus:border-primary"
+                  >
+                    {LESSON_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {kind}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="space-y-2">
                   <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Duration label
                   </span>
                   <input
-                    defaultValue={data.durationMinutes ?? ""}
+                    value={form.durationMinutes}
+                    onChange={(e) => setForm((f) => ({ ...f, durationMinutes: e.target.value }))}
                     placeholder="Minutes, e.g. 7"
                     inputMode="numeric"
                     className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
@@ -99,7 +200,8 @@ function AdminLessonEditor() {
                   Summary
                 </span>
                 <textarea
-                  defaultValue={data.summary}
+                  value={form.summary}
+                  onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
                   className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -108,7 +210,8 @@ function AdminLessonEditor() {
                   Scenario title
                 </span>
                 <input
-                  defaultValue={data.scenarioTitle ?? ""}
+                  value={form.scenarioTitle}
+                  onChange={(e) => setForm((f) => ({ ...f, scenarioTitle: e.target.value }))}
                   placeholder="Optional. Add a scenario title for this lesson."
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
@@ -118,7 +221,8 @@ function AdminLessonEditor() {
                   Scenario body
                 </span>
                 <textarea
-                  defaultValue={data.scenarioBody ?? ""}
+                  value={form.scenarioBody}
+                  onChange={(e) => setForm((f) => ({ ...f, scenarioBody: e.target.value }))}
                   placeholder="Optional. Describe the scenario staff should work through."
                   className="min-h-36 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
@@ -128,7 +232,8 @@ function AdminLessonEditor() {
                   Reflection prompt
                 </span>
                 <textarea
-                  defaultValue={data.reflectionPrompt ?? ""}
+                  value={form.reflectionPrompt}
+                  onChange={(e) => setForm((f) => ({ ...f, reflectionPrompt: e.target.value }))}
                   placeholder="Optional. Add the reflection prompt shown beneath the media block."
                   className="min-h-24 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
@@ -183,7 +288,21 @@ function AdminLessonEditor() {
                 Documents and supporting files
               </h2>
             </div>
-            <AttachContentDialog defaultTitle={data.lessonTitle}>
+            <AttachContentDialog
+              lessonTitle={data.lessonTitle}
+              assets={attachable}
+              onAttach={async (assetId) => {
+                try {
+                  await attachAsset.mutateAsync({
+                    lessonId: lessonDocId,
+                    assetId: assetId as (typeof detail.moduleAssets)[number]["_id"],
+                  });
+                  toast.success("Resource attached.");
+                } catch (caught) {
+                  toast.error(caught instanceof Error ? caught.message : "That did not work.");
+                }
+              }}
+            >
               <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
                 <Plus className="h-4 w-4" /> Add resource
               </button>
@@ -211,6 +330,25 @@ function AdminLessonEditor() {
                     }`}
                   >
                     {resource.publishLabel}
+                    <button
+                      aria-label={`Detach ${resource.title}`}
+                      onClick={async () => {
+                        try {
+                          await detachAsset.mutateAsync({
+                            lessonId: lessonDocId,
+                            assetId: resource.id,
+                          });
+                          toast.success("Resource detached.");
+                        } catch (caught) {
+                          toast.error(
+                            caught instanceof Error ? caught.message : "That did not work.",
+                          );
+                        }
+                      }}
+                      className="ml-2 rounded-lg px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted hover:text-destructive"
+                    >
+                      Detach
+                    </button>
                   </span>
                 </div>
               </div>

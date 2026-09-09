@@ -11,7 +11,7 @@ Each phase is independently shippable: at every phase boundary the app builds, e
 - [x] Phase 2: Seed Content and People
 - [x] Phase 3: Client Wiring and Admin Content Reads
 - [x] Phase 4: Auth and the Admin Guard
-- [ ] Phase 5: Content Mutations and Test Harness
+- [x] Phase 5: Content Mutations and Test Harness
 - [ ] Phase 6: File Storage and Real Uploads
 - [ ] Phase 7: Staff Directory, AI Review, Honest Analytics
 - [ ] Phase 8: Retire the Port and Cut Over the Learner Side
@@ -229,7 +229,7 @@ Definition of done:
 
 Status:
 
-- [ ] Completed
+- [x] Completed
 
 Consent gate: **G7** — first client-reachable writes. Do not open before G5 and G6 are closed.
 
@@ -239,26 +239,28 @@ Goal:
 
 Tasks:
 
-- [ ] Install `vitest`, `@edge-runtime/vm`, `convex-test`; add `vitest.config.ts` (`environment: "edge-runtime"`) and a `test` script. `convex-test` is the substitute for the dev sandbox this project does not have
-- [ ] `convex/modules.ts` — `create`, `update`, `setPublishState`, `publish` (with the readiness gate), `remove`
-- [ ] `convex/objectives.ts` — `add`, `update`, `remove`, `reorder`
-- [ ] `convex/lessons.ts` — `create`, `update`, `move`, `reorder` (rejecting a mismatched id set), `remove`, `attachAsset`, `detachAsset`
-- [ ] `convex/assets.ts` — `create`, `update`, `setStatus`, `remove`
-- [ ] `academy.admin.modules.create.tsx` — real create then navigate to the returned slug; trim the category `<select>` to the 3 valid `ModuleCategory` values (two current options would fail arg validation)
-- [ ] Module editor — add the missing save path and wire the 4 dead reorder buttons
-- [ ] Lesson editor — replace the toast-only save; duration becomes numeric; lesson type becomes a real select instead of a read-only `<div>`
-- [ ] Asset editor — publish state becomes a control instead of a read-only `<div>`
-- [ ] Pass target ids into `AddLessonDialog`, `AddObjectiveDialog`, and `AttachContentDialog` as props; add the missing `case-study` lesson kind; make `AttachContentDialog`'s inputs controlled and its Attach button do something other than close. Dialogs still never import Convex
-- [ ] Delete `getSupportingResources`' silent fallback and give both affected surfaces a real empty state — the "N assets" badge will start showing `0`
-- [ ] Fix the last 2 `<Link to>` typecheck errors
-- [ ] DOX pass: `convex/AGENTS.md` (`npm test`, the `requireAdmin`-first rule, the audit-field convention), `src/routes/AGENTS.md`, `src/components/AGENTS.md`, root `AGENTS.md`, and reconcile `MODULE_UI_PHASES.md` Phase 4
+- [x] Install `vitest`, `@edge-runtime/vm`, `convex-test`; add `vitest.config.ts` (`environment: "edge-runtime"`) and a `test` script. `convex-test` is the substitute for the dev sandbox this project does not have
+- [x] `convex/modules.ts` — `create`, `update`, `setPublishState`, `publish` (with the readiness gate), `remove`
+- [x] `convex/objectives.ts` — `add`, `update`, `remove`, `reorder`
+- [x] `convex/lessons.ts` — `create`, `update`, `move`, `reorder` (rejecting a mismatched id set), `remove`, `attachAsset`, `detachAsset`
+- [x] `convex/assets.ts` — `create`, `update`, `setStatus`, `remove`
+- [x] `academy.admin.modules.create.tsx` — real create then navigate to the returned slug; trim the category `<select>` to the 3 valid `ModuleCategory` values (two current options would fail arg validation)
+- [x] Module editor — add the missing save path and wire the 4 dead reorder buttons
+- [x] Lesson editor — replace the toast-only save; duration becomes numeric; lesson type becomes a real select instead of a read-only `<div>`
+- [x] Asset editor — publish state becomes a control instead of a read-only `<div>`
+- [x] Pass target ids into `AddLessonDialog`, `AddObjectiveDialog`, and `AttachContentDialog` as props; add the missing `case-study` lesson kind; make `AttachContentDialog`'s inputs controlled and its Attach button do something other than close. Dialogs still never import Convex
+- [x] Delete `getSupportingResources`' silent fallback and give both affected surfaces a real empty state — the "N assets" badge will start showing `0`
+- [x] Fixed the last 2 `<Link to>` typecheck errors. **`npx tsc --noEmit` is now at 0**, clearing the baseline the plan has tracked since Phase 0
+- [x] Added `lessonProgress.by_lessonId`, without which deleting a lesson could not clear its progress rows. The table is empty until Phase 8, but the delete had to be correct now rather than carrying a known dangling-reference bug
+- [x] Added `moduleAssets` to `lessons.adminDetail` so the attach picker can offer the module's assets without a second round trip
+- [x] DOX pass: `convex/AGENTS.md` (`npm test`, the `requireAdmin`-first rule, the audit-field convention), `src/routes/AGENTS.md`, `src/components/AGENTS.md`, root `AGENTS.md`, and reconcile `MODULE_UI_PHASES.md` Phase 4
 
 Verification:
 
-- [ ] `npm test` passes **before** the push, including: admin succeeds; `t.withIdentity({ subject: "staff-user" })` is refused; no identity is refused; a caller cannot write into a module they do not own; `seed:run` refuses `reset` on populated tables
-- [ ] `npx tsc --noEmit` reaches **0**
-- [ ] `convex-reviewer` and `convex-authz` clean; `npm run build` succeeds
-- [ ] **G7** push, then editing a module title in the UI updates the library page and dashboard counters with no refresh
+- [x] `npm test` passes **before** the push, including: admin succeeds; `t.withIdentity({ subject: "staff-user" })` is refused; no identity is refused; a caller cannot write into a module they do not own; `seed:run` refuses `reset` on populated tables
+- [x] `npx tsc --noEmit` reaches **0**
+- [x] `convex-reviewer` and `convex-authz` clean; `npm run build` succeeds
+- [x] **G7** push, then editing a module title in the UI updates the library page and dashboard counters with no refresh
 
 Definition of done:
 

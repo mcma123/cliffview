@@ -57,10 +57,23 @@ Schema rules that must hold:
 - Index names list every field in order: `["moduleId", "order"]` becomes `by_moduleId_and_order`
 - Never read the wall clock in a query. `dashboard.adminOverview` takes `now` as an argument
 
+Mutations:
+
+- Every one calls `requireAdmin(ctx)` **first**, before reading or writing anything, and stamps `contentUpdatedAt` via `stamp()`. Who acted goes to `auditLog` through `recordAudit`, never onto the content row
+- Note the ordering: Convex validates `args` _before_ the handler runs, so a malformed call fails validation without ever reaching the authz check. That is safe (nothing executes) but it means a validation error is not evidence that the gate works — test the gate with valid args
+- `modules.publish` is the only way to publish a module, and it checks readiness: non-empty title, description, audience and outcome, a pass mark in range, and at least one published lesson. `setPublishState` deliberately refuses to publish so it cannot be used as a way around the gate
+- Deletion is narrow on purpose. `modules.remove` refuses once anyone is enrolled — that is what `archived` is for — and otherwise cascades to lessons, their join rows, assets and objectives. `assets.remove` clears all three kinds of reference to the asset: join rows, any lesson using it as hero media, and the module hero pointer
+- Ordering stays a dense 1..N. Inserts append via `nextXOrder`, deletes call `renumberX`, `lessons.move` swaps two adjacent rows in one transaction, and `reorder` validates the id set against the authoritative siblings with `assertSameMembers` so a stale client fails loudly instead of dropping a row
+- Slug uniqueness is a mutation invariant, since Convex has no unique constraint: modules probe `by_slug` globally, lessons probe `by_moduleId_and_slug` **within their module only** — lesson slugs are deliberately not globally unique
+- Cross-parent writes are refused: an asset can only be attached to a lesson in its own module, and a module hero must belong to that module
+
 Function surface:
 
-- Public queries: `modules.listForAdmin`, `modules.adminDetail`, `lessons.adminDetail`, `assets.adminDetail`
-- Internal queries: `dashboard.adminOverview`
+- Public queries, all `requireAdmin` except `auth.viewer`: `modules.listForAdmin`, `modules.adminDetail`, `lessons.adminDetail`, `assets.adminDetail`, `dashboard.adminOverview`
+- Public mutations, all `requireAdmin`: `modules.{create,update,publish,setPublishState,remove}`, `objectives.{add,update,remove,reorder}`, `lessons.{create,update,setPublishState,move,reorder,remove,attachAsset,detachAsset}`, `assets.{create,update,setPublishState,remove}`
+- `auth.viewer` is public and ungated by design: it returns the caller's own name, role and job title, or null when unauthenticated, because the admin gate calls it to decide what to draw
+- Public actions owned by Convex Auth: `auth.signIn`, `auth.signOut`, plus `auth.isAuthenticated`
+- Internal: `auth.allowAdminClaim`, `auth.claimStatus`, `auth.store`, `seed.run`
 - Helpers in `convex/lib/`: `authz.ts` (`getActor`, `requireStaff`, `requireAdmin`), `ordering.ts`, `audit.ts`, `counts.ts`, `time.ts`
 - Shared validators in `convex/validators.ts`, mirroring the unions in `src/domain/academy/entities.ts`
 
@@ -103,6 +116,10 @@ Current state:
 
 ## Verification
 
+- `npm test` runs the `convex-test` suites in `convex/*.test.ts`. This is the substitute for a dev deployment: authorization is the thing that cannot be verified by clicking, so **every mutation ships with the four authz negatives** — no identity, a staff identity, an inactive account, and a cross-parent write. Run it before asking for consent to push, not after
+- In tests, `t.withIdentity({ subject: userId })` is enough: `getAuthUserId` splits the subject on `"|"` and takes the first part
+- `npm test` runs the `convex-test` suites in `convex/*.test.ts`. This is the substitute for a dev deployment: authorization is the thing that cannot be verified by clicking, so **every mutation ships with the four authz negatives** — no identity, a staff identity, an inactive account, and a cross-parent write. Run it before asking for consent to push, not after
+- In tests, `t.withIdentity({ subject: userId })` is enough: `getAuthUserId` splits the subject on `"|"` and takes the first part
 - Confirm the live target: `npx convex env list` names the deployment it reached — expect `on prod deployment diligent-mink-756`
 - Typecheck this folder with `npm run typecheck:convex` (`tsc --noEmit -p convex`) — zero production contact. `convex/tsconfig.json` holds the convex@1.45 CLI template shape: `target: ESNext`, `lib: [ES2023, dom]`, `module: ESNext`, and `exclude: ["./_generated"]`. The root `tsconfig.json` still covers only `src/`, so `npm run typecheck` does **not** check this code — run both
 - Always typecheck before asking for consent to push. Do not rely on `npx convex dev --prod --typecheck enable`, which finds type errors only by pushing to production

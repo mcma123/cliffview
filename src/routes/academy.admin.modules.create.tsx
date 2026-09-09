@@ -1,5 +1,9 @@
 import { useState } from "react";
+import { useConvexMutation } from "@convex-dev/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { api } from "../../convex/_generated/api";
+import type { ModuleCategory, ModuleLessonKind } from "@/domain/academy/entities";
 import { AdminShell } from "@/components/admin-shell";
 import {
   ArrowRight,
@@ -42,12 +46,73 @@ const assetDrafts = [
   },
 ];
 
+/**
+ * The three categories are the domain union, not free text. The old select
+ * offered "Compliance & Safety" and "Teaching Methodologies", neither of which
+ * is a valid ModuleCategory, so the very first create call would have failed
+ * argument validation.
+ */
+const CATEGORIES: ModuleCategory[] = ["Core Policies", "SMT Pathway", "Staff Development"];
+
 function CreateModulePage() {
   const navigate = useNavigate();
   const [objectives, setObjectives] = useState<string[]>([]);
   const [lessons, setLessons] = useState<
     { title: string; meta: string; description: string; kind: string }[]
   >([]);
+
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<ModuleCategory>("Core Policies");
+  const [audience, setAudience] = useState("");
+  const [outcome, setOutcome] = useState("");
+  const [description, setDescription] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const createModule = useMutation({ mutationFn: useConvexMutation(api.modules.create) });
+  const addObjective = useMutation({ mutationFn: useConvexMutation(api.objectives.add) });
+  const createLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.create) });
+
+  /**
+   * Create the module as a draft, then flush the objectives and lessons this
+   * page collected against the id it returns.
+   *
+   * Order matters: there has to be a real parent before children can attach to
+   * it. The old page held all of this in local state and threw it away on
+   * navigate.
+   */
+  async function saveDraft(): Promise<string | null> {
+    if (title.trim().length === 0) {
+      toast.error("Give the module a name first.");
+      return null;
+    }
+    setPending(true);
+    try {
+      const { moduleId, slug } = await createModule.mutateAsync({
+        title,
+        category,
+        audience,
+        outcome,
+        description,
+      });
+      for (const text of objectives) {
+        await addObjective.mutateAsync({ moduleId, text });
+      }
+      for (const lesson of lessons) {
+        await createLesson.mutateAsync({
+          moduleId,
+          title: lesson.title,
+          kind: lesson.kind as ModuleLessonKind,
+          summary: lesson.description,
+        });
+      }
+      return slug;
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not save the module.");
+      return null;
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <AdminShell>
@@ -64,7 +129,8 @@ function CreateModulePage() {
           </div>
 
           <Link
-            to="/academy/modules/parent-communication-protocol"
+            to="/academy/modules/$moduleSlug"
+            params={{ moduleSlug: "parent-communication-protocol" }}
             className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
           >
             Preview learner view <ArrowRight className="h-4 w-4" />
@@ -93,6 +159,8 @@ function CreateModulePage() {
                   Module name
                 </span>
                 <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Parent Communication Protocol"
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none ring-0 focus:border-primary"
                 />
@@ -101,11 +169,16 @@ function CreateModulePage() {
                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Category
                 </span>
-                <select className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground focus:border-primary outline-none">
-                  <option>Staff Development</option>
-                  <option>Compliance & Safety</option>
-                  <option>Teaching Methodologies</option>
-                  <option>Core Policies</option>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as ModuleCategory)}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground focus:border-primary outline-none"
+                >
+                  {CATEGORIES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -116,6 +189,8 @@ function CreateModulePage() {
                   Audience
                 </span>
                 <textarea
+                  value={audience}
+                  onChange={(e) => setAudience(e.target.value)}
                   placeholder="e.g. Teachers, grade leads, front office staff..."
                   className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                 />
@@ -125,6 +200,8 @@ function CreateModulePage() {
                   Outcome
                 </span>
                 <textarea
+                  value={outcome}
+                  onChange={(e) => setOutcome(e.target.value)}
                   placeholder="e.g. Give staff a clear communication structure..."
                   className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                 />
@@ -136,6 +213,8 @@ function CreateModulePage() {
                 Learner-facing description
               </span>
               <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
                 placeholder="A practical communication module for handling sensitive parent messages..."
                 className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
               />
@@ -207,7 +286,8 @@ function CreateModulePage() {
                 still pending.
               </p>
               <Link
-                to="/academy/modules/parent-communication-protocol"
+                to="/academy/modules/$moduleSlug"
+                params={{ moduleSlug: "parent-communication-protocol" }}
                 className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-gold px-4 py-3 text-sm font-semibold text-primary-deep hover:bg-[#f2cb58]"
               >
                 Open learner demo <ArrowRight className="h-4 w-4" />
@@ -275,19 +355,38 @@ function CreateModulePage() {
           </div>
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={() => toast.success("Draft saved successfully!")}
-              className="rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted"
+              disabled={pending}
+              onClick={async () => {
+                const slug = await saveDraft();
+                if (slug === null) return;
+                toast.success("Draft saved.");
+                await navigate({
+                  to: "/academy/admin/modules/$moduleSlug",
+                  params: { moduleSlug: slug },
+                });
+              }}
+              className="rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-60"
             >
-              Save draft
+              {pending ? "Saving..." : "Save draft"}
             </button>
             <button
-              onClick={() => {
-                toast.success("Module published successfully! Redirecting...");
-                setTimeout(() => navigate({ to: "/academy/admin/modules" }), 1500);
+              disabled={pending}
+              onClick={async () => {
+                const slug = await saveDraft();
+                if (slug === null) return;
+                // Publishing has real preconditions now, including at least one
+                // published lesson, so a brand-new module cannot publish from
+                // here. Send the author to the editor rather than claiming it
+                // published.
+                toast.success("Draft saved. Publish it from the editor once a lesson is ready.");
+                await navigate({
+                  to: "/academy/admin/modules/$moduleSlug",
+                  params: { moduleSlug: slug },
+                });
               }}
-              className="rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
+              className="rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
             >
-              Publish module
+              {pending ? "Saving..." : "Save and continue"}
             </button>
           </div>
         </div>

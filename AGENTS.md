@@ -82,7 +82,7 @@ Cliffview Academy Hub — staff training and compliance portal for Cliffview Pri
 - Stack: TanStack Start (SSR, file-based routing), React 19, Tailwind v4, shadcn/ui on Radix, TanStack Query, Zod
 - Build: Vite via `@lovable.dev/vite-tanstack-config`; Nitro output preset is `vercel` when `VERCEL` is set, otherwise `node-server`
 - Backend: Convex (`convex@^1.45.0`), live on the **production** deployment `diligent-mink-756` with 18 tables seeded and the admin content reads wired into the React app. See `convex/AGENTS.md` for the deployment and consent contract, `ADMIN_BACKEND.md` for the build phases
-- Auth is live: Convex Auth (email + password) gates the admin console, and every admin query calls `requireAdmin`. Sign-in is real; admin write dialogs are still UI-only until Phase 5. Admin screens read from Convex and are client-rendered behind the gate; staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
+- Auth is live: Convex Auth (email + password) gates the admin console, and every admin query and mutation calls `requireAdmin`. Sign-in is real, and admin content edits persist. Admin screens read from Convex and are client-rendered behind the gate; staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
 - Architecture is Clean Architecture; the dependency rule is enforced by convention, documented in `src/AGENTS.md`. Reference material: `clean-architecture-expert/SKILL.md`
 
 ## Repo-Wide Rules
@@ -105,11 +105,12 @@ Run from the repo root:
 - `npm run lint` — ESLint with `prettier/prettier` as an error rule
 - `npm run typecheck` — `tsc --noEmit` over `src/`
 - `npm run typecheck:convex` — `tsc --noEmit -p convex` over the backend; the root config does not cover `convex/`, so run both
+- `npm test` — `convex-test` suites in `convex/*.test.ts`. Run before any push that adds or changes a Convex function
 - `npm run build` — Vite/Nitro production build
 
 Known baseline, pre-existing and not caused by new work:
 
-- `npm run typecheck` reports **4** errors in `src/routes/academy.admin.modules.create.tsx` and `src/routes/academy.admin.modules.index.tsx`: hardcoded `<Link to="/academy/modules/parent-communication-protocol">` strings are not valid typed routes and need `to="/academy/modules/$moduleSlug"` with `params`. `ADMIN_BACKEND.md` drives this to 2 in Phase 3 and 0 in Phase 5 — any error beyond that count is new
+- `npm run typecheck` and `npm run typecheck:convex` are both **clean**, and `npm test` passes. The old 4-error `<Link to>` baseline is gone as of Phase 5, so **any** error now is new work and must be fixed rather than counted
 - `npm run lint` is **clean** (0 errors). It reports 6 `react-refresh/only-export-components` warnings from files that export a constant alongside a component; these are warnings, not errors
 - `.prettierrc` sets `"endOfLine": "auto"` so Prettier preserves this Windows checkout's CRLF endings instead of reporting every line as an error
 

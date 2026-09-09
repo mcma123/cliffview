@@ -17,7 +17,10 @@ Shared React components: the two app shells, feature views, admin form dialogs, 
   - `StaffShell` renders a desktop sidebar, a mobile drawer, a sticky top bar, and a mobile bottom nav; it accepts an optional `title`. Active state is `pathname.startsWith(item.to)`
   - `AdminShell` nav items carry `exact` and `ready`. Non-ready items render as an inert `<a>` with a "soon" badge — `Reports` is currently the only one. Add `ready: true` when a route lands
   - The streak pill, notification bell, and `MN` avatar in the shells are hardcoded placeholders, not user data
-- Dialogs (`add-lesson-dialog.tsx`, `add-objective-dialog.tsx`, `attach-content-dialog.tsx`) wrap their own trigger via `children` and hold local state only. `drag-and-drop-zone.tsx` is likewise visual-only. Nothing persists
+- Dialogs (`add-lesson-dialog`, `add-objective-dialog`, `attach-content-dialog`) wrap their own trigger via `children` and take a callback the route supplies. They still import no Convex: the route owns the mutation and passes ids in, which is what keeps them reusable
+- `add-lesson-dialog` offers all five `ModuleLessonKind` values and emits a typed `kind`. `case-study` was missing before, so the kind the seeded scenario lessons use could not be created through the UI
+- `attach-content-dialog` is a picker over the module's existing assets, not an uploader. It previously had no callback at all, and its Cancel and Attach buttons did the same thing
+- `drag-and-drop-zone.tsx` is still visual-only until file storage lands
 - Brand marks live only in `cliffview-logo.tsx` (`CliffviewShield`, `CliffviewWordmark`). Do not inline logo SVG anywhere else
 - Style with Tailwind utilities composed through `cn()` from `@/lib/utils`. Use semantic tokens only — `bg-card`, `text-muted-foreground`, `text-gold`, `bg-primary-deep`, `text-success`. No hex, rgb, or arbitrary color values; add a token in `src/styles.css` instead
 - A component that exports non-component values alongside components trips the `react-refresh/only-export-components` warning. Move shared constants to their own module

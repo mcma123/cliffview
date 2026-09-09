@@ -1,5 +1,7 @@
-import { convexQuery } from "@convex-dev/react-query";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { presentAdminModuleDetail } from "@/application/academy/presenters";
@@ -19,6 +21,7 @@ import {
 } from "lucide-react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
+import { AddObjectiveDialog } from "@/components/add-objective-dialog";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/")({
@@ -37,6 +40,49 @@ function AdminModuleDetail() {
     convexQuery(api.modules.adminDetail, { slug: moduleSlug }),
   );
   const data = presentAdminModuleDetail(detail, now);
+
+  const moduleId = detail.module._id;
+  const updateModule = useMutation({ mutationFn: useConvexMutation(api.modules.update) });
+  const publishModule = useMutation({ mutationFn: useConvexMutation(api.modules.publish) });
+  const setModuleState = useMutation({
+    mutationFn: useConvexMutation(api.modules.setPublishState),
+  });
+  const addObjective = useMutation({ mutationFn: useConvexMutation(api.objectives.add) });
+  const removeObjective = useMutation({ mutationFn: useConvexMutation(api.objectives.remove) });
+  const moveLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.move) });
+  const createLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.create) });
+  const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
+  const attachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.attachAsset) });
+
+  // The picker needs the module assets in its own shape. Building it here keeps
+  // the dialog prop-driven and free of any Convex import.
+  const attachable = data.resources.map((asset) => ({
+    id: asset.id,
+    title: asset.title,
+    kind: asset.kind,
+    meta: asset.meta,
+    alreadyAttached: false,
+  }));
+
+  // Copy edits are collected here and saved together, so one Save covers the
+  // whole block rather than firing a mutation per keystroke.
+  const [copy, setCopy] = useState({
+    title: data.title,
+    audience: data.audience,
+    outcome: data.outcome,
+    description: data.description,
+  });
+  const [saving, setSaving] = useState(false);
+
+  /** Run a mutation, surfacing the server message rather than a generic toast. */
+  async function run(label: string, action: () => Promise<unknown>) {
+    try {
+      await action();
+      toast.success(label);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "That did not work.");
+    }
+  }
 
   return (
     <AdminShell>
@@ -62,6 +108,40 @@ function AdminModuleDetail() {
             >
               Preview learner side
             </Link>
+            <button
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                await run("Module copy saved.", () =>
+                  updateModule.mutateAsync({ moduleId, ...copy }),
+                );
+                setSaving(false);
+              }}
+              className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+            {data.publishState === "published" ? (
+              <button
+                onClick={() =>
+                  run("Module moved back to draft.", () =>
+                    setModuleState.mutateAsync({ moduleId, publishState: "draft" }),
+                  )
+                }
+                className="rounded-2xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                Unpublish
+              </button>
+            ) : (
+              <button
+                onClick={() =>
+                  run("Module published.", () => publishModule.mutateAsync({ moduleId }))
+                }
+                className="rounded-2xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                Publish
+              </button>
+            )}
             <span
               className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-wider ${
                 data.publishState === "published"
@@ -112,7 +192,8 @@ function AdminModuleDetail() {
                   Module name
                 </span>
                 <input
-                  defaultValue={data.title}
+                  value={copy.title}
+                  onChange={(e) => setCopy((c) => ({ ...c, title: e.target.value }))}
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -121,7 +202,8 @@ function AdminModuleDetail() {
                   Audience
                 </span>
                 <input
-                  defaultValue={data.audience}
+                  value={copy.audience}
+                  onChange={(e) => setCopy((c) => ({ ...c, audience: e.target.value }))}
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -132,7 +214,8 @@ function AdminModuleDetail() {
                 Outcome
               </span>
               <textarea
-                defaultValue={data.outcome}
+                value={copy.outcome}
+                onChange={(e) => setCopy((c) => ({ ...c, outcome: e.target.value }))}
                 className="min-h-28 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
               />
             </label>
@@ -142,7 +225,8 @@ function AdminModuleDetail() {
                 Learner-facing description
               </span>
               <textarea
-                defaultValue={data.description}
+                value={copy.description}
+                onChange={(e) => setCopy((c) => ({ ...c, description: e.target.value }))}
                 className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
               />
             </label>
@@ -157,18 +241,35 @@ function AdminModuleDetail() {
                     These cards appear directly on the academy-side module page.
                   </p>
                 </div>
-                <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                  <Plus className="h-4 w-4" /> Add objective
-                </button>
+                <AddObjectiveDialog
+                  onAddObjective={(text) =>
+                    void run("Objective added.", () => addObjective.mutateAsync({ moduleId, text }))
+                  }
+                >
+                  <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
+                    <Plus className="h-4 w-4" /> Add objective
+                  </button>
+                </AddObjectiveDialog>
               </div>
 
               <div className="mt-5 space-y-3">
                 {data.objectives.map((objective) => (
                   <div
                     key={objective.id}
-                    className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground"
+                    className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground"
                   >
-                    {objective.text}
+                    <span>{objective.text}</span>
+                    <button
+                      aria-label={`Remove objective: ${objective.text}`}
+                      onClick={() =>
+                        run("Objective removed.", () =>
+                          removeObjective.mutateAsync({ objectiveId: objective.id }),
+                        )
+                      }
+                      className="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-destructive"
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
@@ -235,7 +336,18 @@ function AdminModuleDetail() {
                 Module flow and content blocks
               </h2>
             </div>
-            <AddLessonDialog>
+            <AddLessonDialog
+              onAddLesson={(lesson) =>
+                void run("Lesson added.", () =>
+                  createLesson.mutateAsync({
+                    moduleId,
+                    title: lesson.title,
+                    kind: lesson.kind,
+                    summary: lesson.description,
+                  }),
+                )
+              }
+            >
               <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
                 <Plus className="h-4 w-4" /> Add lesson
               </button>
@@ -272,6 +384,11 @@ function AdminModuleDetail() {
                       <button
                         className="rounded-xl border border-border bg-card p-2 text-muted-foreground hover:bg-muted"
                         aria-label={`Move ${lesson.title} up`}
+                        onClick={() =>
+                          run("Lesson order updated.", () =>
+                            moveLesson.mutateAsync({ lessonId: lesson.id, direction: "up" }),
+                          )
+                        }
                       >
                         <ArrowUp className="h-4 w-4" />
                       </button>
@@ -281,6 +398,11 @@ function AdminModuleDetail() {
                       <button
                         className="rounded-xl border border-border bg-card p-2 text-muted-foreground hover:bg-muted"
                         aria-label={`Move ${lesson.title} down`}
+                        onClick={() =>
+                          run("Lesson order updated.", () =>
+                            moveLesson.mutateAsync({ lessonId: lesson.id, direction: "down" }),
+                          )
+                        }
                       >
                         <ArrowDown className="h-4 w-4" />
                       </button>
@@ -339,10 +461,26 @@ function AdminModuleDetail() {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted lg:hidden">
+                        <button
+                          aria-label={`Move ${lesson.title} up`}
+                          onClick={() =>
+                            run("Lesson order updated.", () =>
+                              moveLesson.mutateAsync({ lessonId: lesson.id, direction: "up" }),
+                            )
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted lg:hidden"
+                        >
                           <ArrowUp className="h-4 w-4" /> Up
                         </button>
-                        <button className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted lg:hidden">
+                        <button
+                          aria-label={`Move ${lesson.title} down`}
+                          onClick={() =>
+                            run("Lesson order updated.", () =>
+                              moveLesson.mutateAsync({ lessonId: lesson.id, direction: "down" }),
+                            )
+                          }
+                          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted lg:hidden"
+                        >
                           <ArrowDown className="h-4 w-4" /> Down
                         </button>
                         <Link
@@ -351,7 +489,18 @@ function AdminModuleDetail() {
                         >
                           Open lesson editor
                         </Link>
-                        <AttachContentDialog defaultTitle={lesson.title}>
+                        <AttachContentDialog
+                          lessonTitle={lesson.title}
+                          assets={attachable}
+                          onAttach={(assetId) =>
+                            run("Resource attached.", () =>
+                              attachAsset.mutateAsync({
+                                lessonId: lesson.id,
+                                assetId: assetId as (typeof data.resources)[number]["id"],
+                              }),
+                            )
+                          }
+                        >
                           <button className="rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
                             Attach content
                           </button>
@@ -375,7 +524,18 @@ function AdminModuleDetail() {
                 Documents, worksheets, and media
               </h2>
             </div>
-            <button className="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
+            <button
+              onClick={() =>
+                run("Asset placeholder created.", () =>
+                  createAsset.mutateAsync({
+                    moduleId,
+                    title: "Untitled asset",
+                    kind: "document",
+                  }),
+                )
+              }
+              className="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
+            >
               Add placeholder asset
             </button>
           </div>

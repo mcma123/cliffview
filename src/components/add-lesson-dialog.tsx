@@ -7,7 +7,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, BookOpen, Video, Headphones, Target } from "lucide-react";
+import { Plus, BookOpen, Video, Headphones, Target, Users } from "lucide-react";
+import type { ModuleLessonKind } from "@/domain/academy/entities";
 
 export function AddLessonDialog({
   children,
@@ -18,18 +19,21 @@ export function AddLessonDialog({
     title: string;
     meta: string;
     description: string;
-    kind: string;
+    kind: ModuleLessonKind;
   }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-  const [selectedType, setSelectedType] = useState("video");
+  const [selectedType, setSelectedType] = useState<ModuleLessonKind>("video");
 
-  const types = [
+  // All five ModuleLessonKind values. `case-study` was missing, even though the
+  // seeded scenario lessons use it, so it could not be created through the UI.
+  const types: { id: ModuleLessonKind; label: string; icon: typeof Video; desc: string }[] = [
     { id: "video", label: "Video Lesson", icon: Video, desc: "Standard recorded lesson" },
     { id: "reading", label: "Reading", icon: BookOpen, desc: "Text and documents" },
     { id: "audio", label: "Audio", icon: Headphones, desc: "Narration or podcast style" },
+    { id: "case-study", label: "Case Study", icon: Users, desc: "Scenario and reflection" },
     { id: "assessment", label: "Assessment", icon: Target, desc: "Quiz or sign-off" },
   ];
 
