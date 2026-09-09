@@ -14,7 +14,12 @@ TanStack Start file-based routes for both surfaces: the staff learner portal at 
 
 - Flat dot-notation filenames map to URL segments; `$param` is a dynamic segment; `.index` is an index route. `routeTree.gen.ts` is generated — never hand-edit it
 - Standard page shape: `createFileRoute` with `head` (title formatted `Page · Cliffview Academy`), `loader: () => academyQueries.…`, and `component`
-- Loaders call `academyQueries` from `@/infrastructure/academy/container` only. No fetching or data assembly inside components; read with `Route.useLoaderData()`
+- Two data paths, and which one a route uses depends on whether it has been migrated:
+  - **Convex (admin content routes).** The loader warms the cache with `context.queryClient.ensureQueryData(convexQuery(api.x.y, args))`; the route component reads the same key with `useSuspenseQuery(convexQuery(...))`, passes the result through a presenter from `@/application/academy/presenters`, and hands plain props to shared components. SSR fetches once at a consistent timestamp; the client upgrades the same key to a live subscription, so an edit repaints open pages with no refetch code
+  - **Container (everything not yet migrated).** `loader: () => academyQueries.…` plus `Route.useLoaderData()`, exactly as before
+- The container path ends at Phase 8, which deletes it. Until then do not add new routes on it
+- Migrated so far: the four admin content routes (`admin.modules.index`, `admin.modules.$moduleSlug.index`, `...lessons.$lessonId`, `...assets.$assetId`). Still on the container: the admin overview (waiting on `requireAdmin` in Phase 4), staff and AI review (Phase 7), and every learner route (Phase 8)
+- Components still never fetch. Only a route component may call `useSuspenseQuery`; `src/components` stays prop-driven and imports no Convex
 - Each page mounts its own shell: `StaffShell` for learner pages, `AdminShell` for `/academy/admin/*`. The pathless layout files (`academy.admin.tsx`, `academy.admin.modules.tsx`, `academy.admin.staff.tsx`, `academy.modules.tsx`, `academy.modules.$moduleSlug.tsx`) are minimal `<Outlet />` pass-throughs — keep them that way unless you move shells into them, which is a cross-route change
 - `index.tsx` redirects `/` to `/academy/sign-in` in `beforeLoad`. Sign-in is UI only: there is no auth and no route is protected. Do not write copy implying a session exists
 - `<Link to=...>` is type-checked against the generated route tree. Dynamic targets must use `to="/academy/modules/$moduleSlug"` with `params`, not an interpolated string. Four pre-existing violations in `academy.admin.modules.create.tsx` and `academy.admin.modules.index.tsx` are in the root known-failure baseline — fix them if you touch those files

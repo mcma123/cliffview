@@ -1,6 +1,9 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { presentAdminLessonDetail } from "@/application/academy/presenters";
+import { api } from "../../convex/_generated/api";
 import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video, Save } from "lucide-react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
@@ -8,12 +11,26 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons/$lessonId")({
   head: () => ({ meta: [{ title: "Lesson Editor · Cliffview Academy" }] }),
-  loader: ({ params }) => academyQueries.getAdminLessonDetail(params.moduleSlug, params.lessonId),
+  loader: async ({ context, params }) => {
+    // $lessonId now carries the module-scoped lesson slug, which is what the
+    // seeded slugs are, so existing lesson URLs keep working.
+    await context.queryClient.ensureQueryData(
+      convexQuery(api.lessons.adminDetail, {
+        moduleSlug: params.moduleSlug,
+        lessonSlug: params.lessonId,
+      }),
+    );
+    return null;
+  },
   component: AdminLessonEditor,
 });
 
 function AdminLessonEditor() {
-  const data = Route.useLoaderData();
+  const { moduleSlug, lessonId } = Route.useParams();
+  const { data: detail } = useSuspenseQuery(
+    convexQuery(api.lessons.adminDetail, { moduleSlug, lessonSlug: lessonId }),
+  );
+  const data = presentAdminLessonDetail(detail);
 
   return (
     <AdminShell>
@@ -78,7 +95,9 @@ function AdminLessonEditor() {
                     Duration label
                   </span>
                   <input
-                    defaultValue={data.durationLabel}
+                    defaultValue={data.durationMinutes ?? ""}
+                    placeholder="Minutes, e.g. 7"
+                    inputMode="numeric"
                     className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                   />
                 </label>
@@ -97,7 +116,8 @@ function AdminLessonEditor() {
                   Scenario title
                 </span>
                 <input
-                  defaultValue={data.scenarioTitle}
+                  defaultValue={data.scenarioTitle ?? ""}
+                  placeholder="Optional. Add a scenario title for this lesson."
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -106,7 +126,8 @@ function AdminLessonEditor() {
                   Scenario body
                 </span>
                 <textarea
-                  defaultValue={data.scenarioBody}
+                  defaultValue={data.scenarioBody ?? ""}
+                  placeholder="Optional. Describe the scenario staff should work through."
                   className="min-h-36 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -115,7 +136,8 @@ function AdminLessonEditor() {
                   Reflection prompt
                 </span>
                 <textarea
-                  defaultValue={data.reflectionPrompt}
+                  defaultValue={data.reflectionPrompt ?? ""}
+                  placeholder="Optional. Add the reflection prompt shown beneath the media block."
                   className="min-h-24 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -127,8 +149,10 @@ function AdminLessonEditor() {
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Hero media</p>
               <div className="mt-5">
                 <DragAndDropZone
-                  title={data.mediaTitle}
-                  description={data.mediaDescription}
+                  title={data.heroTitle ?? "No hero media set"}
+                  description={
+                    data.heroDescription ?? "Attach an asset to use as this lesson hero."
+                  }
                   icon={data.kind === "audio" ? Headphones : Video}
                   onUpload={() => toast.success("Hero media updated successfully")}
                 />
@@ -138,15 +162,20 @@ function AdminLessonEditor() {
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Upload zones</p>
               <div className="mt-5 space-y-3">
-                {data.uploadZones.map((zone) => (
-                  <DragAndDropZone
-                    key={zone.title}
-                    title={zone.title}
-                    description={zone.description}
-                    icon={Upload}
-                    onUpload={() => toast.success(`${zone.title} uploaded successfully`)}
-                  />
-                ))}
+                {data.linkedResources.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No resources are attached to this lesson yet.
+                  </p>
+                ) : (
+                  data.linkedResources.map((asset) => (
+                    <DragAndDropZone
+                      key={asset.id}
+                      title={asset.title}
+                      description={`${asset.kind} - ${asset.meta}`}
+                      icon={Upload}
+                    />
+                  ))
+                )}
               </div>
             </section>
           </div>
@@ -184,12 +213,12 @@ function AdminLessonEditor() {
                 <div className="mt-4">
                   <span
                     className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                      resource.status === "published"
+                      resource.publishState === "published"
                         ? "bg-success/15 text-success"
                         : "bg-gold-soft text-primary-deep"
                     }`}
                   >
-                    {resource.status}
+                    {resource.publishLabel}
                   </span>
                 </div>
               </div>

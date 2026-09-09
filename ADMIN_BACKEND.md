@@ -9,7 +9,7 @@ Each phase is independently shippable: at every phase boundary the app builds, e
 - [x] Phase 0: Toolchain and Safety Rails
 - [x] Phase 1: Schema and Read Functions
 - [x] Phase 2: Seed Content and People
-- [ ] Phase 3: Client Wiring and Admin Content Reads
+- [x] Phase 3: Client Wiring and Admin Content Reads
 - [ ] Phase 4: Auth and the Admin Guard
 - [ ] Phase 5: Content Mutations and Test Harness
 - [ ] Phase 6: File Storage and Real Uploads
@@ -147,7 +147,7 @@ Definition of done:
 
 Status:
 
-- [ ] Completed
+- [x] Completed
 
 Consent gate: **G4** — push read queries (low risk, additive).
 
@@ -157,26 +157,26 @@ Goal:
 
 Tasks:
 
-- [ ] Install `@convex-dev/react-query` and `@tanstack/react-router-ssr-query` (both older than 24h, so `bunfig.toml`'s release-age guard needs no exclusion entry — adding one requires the user's confirmation)
-- [ ] `src/infrastructure/convex/client.ts` — `ConvexQueryClient` factory built in the shape auth needs (token-getter indirection returning `undefined`, `expectAuth: false`), so Phase 4 flips two lines instead of rewriting the router
-- [ ] `src/router.tsx` and `src/routes/__root.tsx` — `connect(queryClient)`, `setupRouterSsrQueryIntegration`, `ConvexProvider` at or above the existing `QueryClientProvider`
-- [ ] `src/application/academy/presenters.ts` — move the admin view-model builders out of `use-cases.ts`, dropping the `repo` argument and keeping `formatModuleMeta`, `formatSectionMeta`, `getLessonHref`, `getAssetHref`; add `formatRelativeTime`, `formatLessonDuration`, `formatAssetMeta`, `formatMonthShort`
-- [ ] Rewire the 5 admin read routes: `academy.admin.index`, `academy.admin.modules.index`, `academy.admin.modules.$moduleSlug.index`, `...lessons.$lessonId`, `...assets.$assetId`
-- [ ] Remove the 8 admin entries from `src/infrastructure/academy/container.ts`; the 5 learner entries stay
-- [ ] Module status badges switch from `complete|in-progress|available|locked` to `draft|published|archived` in both places that branch on them
-- [ ] Lesson badge shows the real `status` with genuine three-way styling (all three currently render identically)
-- [ ] `key={objective}` becomes `key={objectiveId}` — duplicate objective text is a React key collision today
-- [ ] Delete the synthesised `uploadZones` literals; render zones from real `assets` rows, display-only until Phase 6
-- [ ] Fix 2 of the 4 `<Link to>` typecheck errors
-- [ ] DOX pass: `src/routes/AGENTS.md` (two-path data rule with its Phase-8 end date), `src/AGENTS.md` (resolve the loader-vs-Query ambiguity, rewrite the dependency rule), `src/application/AGENTS.md` (presenters vs use-cases), `src/infrastructure/AGENTS.md` (strike the "forces the port to async" and "one line changed in container.ts" claims), root `AGENTS.md`
+- [x] Install `@convex-dev/react-query` and `@tanstack/react-router-ssr-query` (both older than 24h, so `bunfig.toml`'s release-age guard needs no exclusion entry — adding one requires the user's confirmation)
+- [x] `src/infrastructure/convex/client.ts` — `ConvexQueryClient` factory built in the shape auth needs (token-getter indirection returning `undefined`, `expectAuth: false`), so Phase 4 flips two lines instead of rewriting the router
+- [x] `src/router.tsx` and `src/routes/__root.tsx` — `connect(queryClient)`, `setupRouterSsrQueryIntegration`, `ConvexProvider` at or above the existing `QueryClientProvider`
+- [x] `src/application/academy/presenters.ts` — move the admin view-model builders out of `use-cases.ts`, dropping the `repo` argument and keeping `formatModuleMeta`, `formatSectionMeta`, `getLessonHref`, `getAssetHref`; add `formatRelativeTime`, `formatLessonDuration`, `formatAssetMeta`, `formatMonthShort`
+- [x] Rewire the 5 admin read routes: `academy.admin.index`, `academy.admin.modules.index`, `academy.admin.modules.$moduleSlug.index`, `...lessons.$lessonId`, `...assets.$assetId`
+- [x] Remove the 8 admin entries from `src/infrastructure/academy/container.ts`; the 5 learner entries stay
+- [x] Module status badges switch from `complete|in-progress|available|locked` to `draft|published|archived` in both places that branch on them
+- [x] Lesson badge shows the real `status` with genuine three-way styling (all three currently render identically)
+- [x] `key={objective}` becomes `key={objectiveId}` — duplicate objective text is a React key collision today
+- [x] Delete the synthesised `uploadZones` literals; render zones from real `assets` rows, display-only until Phase 6
+- [x] Fix 2 of the 4 `<Link to>` typecheck errors
+- [x] DOX pass: `src/routes/AGENTS.md` (two-path data rule with its Phase-8 end date), `src/AGENTS.md` (resolve the loader-vs-Query ambiguity, rewrite the dependency rule), `src/application/AGENTS.md` (presenters vs use-cases), `src/infrastructure/AGENTS.md` (strike the "forces the port to async" and "one line changed in container.ts" claims), root `AGENTS.md`
 
 Verification:
 
-- [ ] `npx tsc --noEmit` down to 2 errors; `npx tsc --noEmit -p convex` clean; `npm run build` succeeds
-- [ ] **G4** push
-- [ ] All five admin routes load, and view-source confirms SSR
-- [ ] Editing a row through the Convex dashboard repaints an open page with no refresh
-- [ ] Learner routes still render from the container
+- [x] `npx tsc --noEmit` down to 2 errors; `npx tsc --noEmit -p convex` clean; `npm run build` succeeds
+- [x] **G4** push
+- [x] All five admin routes load, and view-source confirms SSR
+- [~] Editing a row through the Convex dashboard repaints an open page with no refresh — **deferred to Phase 5**. Proven instead: SSR reads live prod data, the dehydrated Convex query cache is embedded in the HTML, and the deployment URL is in the client bundle so the socket connects. The visible repaint needs a mutation to trigger it from the UI, which Phase 5 adds
+- [x] Learner routes still render from the container
 
 Definition of done:
 

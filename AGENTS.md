@@ -81,8 +81,8 @@ Cliffview Academy Hub — staff training and compliance portal for Cliffview Pri
 
 - Stack: TanStack Start (SSR, file-based routing), React 19, Tailwind v4, shadcn/ui on Radix, TanStack Query, Zod
 - Build: Vite via `@lovable.dev/vite-tanstack-config`; Nitro output preset is `vercel` when `VERCEL` is set, otherwise `node-server`
-- Backend: Convex (`convex@^1.45.0`), installed but empty — no schema, no functions, not yet wired into the React app. All work targets the **production** deployment `diligent-mink-756` directly; see `convex/AGENTS.md`
-- Prototype stage: no auth and no persistence yet. All data is seeded in `src/infrastructure/academy/in-memory-academy-repository.ts`. Sign-in and every admin write dialog are UI-only
+- Backend: Convex (`convex@^1.45.0`), live on the **production** deployment `diligent-mink-756` with 18 tables seeded and the admin content reads wired into the React app. See `convex/AGENTS.md` for the deployment and consent contract, `ADMIN_BACKEND.md` for the build phases
+- No auth yet (Phase 4) and no write path yet (Phase 5): sign-in and every admin write dialog are still UI-only. Admin content screens read from Convex; the admin overview, staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
 - Architecture is Clean Architecture; the dependency rule is enforced by convention, documented in `src/AGENTS.md`. Reference material: `clean-architecture-expert/SKILL.md`
 
 ## Repo-Wide Rules

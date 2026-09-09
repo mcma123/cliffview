@@ -1,6 +1,9 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { presentAdminModuleDetail } from "@/application/academy/presenters";
+import { api } from "../../convex/_generated/api";
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,12 +23,22 @@ import { AttachContentDialog } from "@/components/attach-content-dialog";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/")({
   head: () => ({ meta: [{ title: "Edit Module · Cliffview Academy" }] }),
-  loader: ({ params }) => academyQueries.getAdminModuleDetail(params.moduleSlug),
+  loader: async ({ context, params }) => {
+    await context.queryClient.ensureQueryData(
+      convexQuery(api.modules.adminDetail, { slug: params.moduleSlug }),
+    );
+    return { now: Date.now() };
+  },
   component: AdminModuleDetail,
 });
 
 function AdminModuleDetail() {
-  const data = Route.useLoaderData();
+  const { moduleSlug } = Route.useParams();
+  const { now } = Route.useLoaderData();
+  const { data: detail } = useSuspenseQuery(
+    convexQuery(api.modules.adminDetail, { slug: moduleSlug }),
+  );
+  const data = presentAdminModuleDetail(detail, now);
 
   return (
     <AdminShell>
@@ -53,16 +66,14 @@ function AdminModuleDetail() {
             </Link>
             <span
               className={`rounded-full px-4 py-2 text-xs font-bold uppercase tracking-wider ${
-                data.status === "complete"
+                data.publishState === "published"
                   ? "bg-success/15 text-success"
-                  : data.status === "in-progress"
+                  : data.publishState === "draft"
                     ? "bg-gold-soft text-primary-deep"
-                    : data.status === "available"
-                      ? "bg-primary-soft text-primary"
-                      : "bg-muted text-muted-foreground"
+                    : "bg-muted text-muted-foreground"
               }`}
             >
-              {data.status}
+              {data.publishLabel}
             </span>
           </div>
         </div>
@@ -156,10 +167,10 @@ function AdminModuleDetail() {
               <div className="mt-5 space-y-3">
                 {data.objectives.map((objective) => (
                   <div
-                    key={objective}
+                    key={objective.id}
                     className="rounded-2xl border border-border bg-card px-4 py-3 text-sm text-foreground"
                   >
-                    {objective}
+                    {objective.text}
                   </div>
                 ))}
               </div>
@@ -195,13 +206,19 @@ function AdminModuleDetail() {
             </div>
 
             <div className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Upload zones</p>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
+                Asset placeholders
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                One zone per real asset on this module. Uploading is wired in a later phase, so
+                these report the current file state rather than accepting a file.
+              </p>
               <div className="mt-5 space-y-3">
-                {data.uploadZones.map((zone) => (
+                {data.resources.map((asset) => (
                   <DragAndDropZone
-                    key={zone.title}
-                    title={zone.title}
-                    description={zone.description}
+                    key={asset.id}
+                    title={asset.title}
+                    description={`${asset.kind} - ${asset.hasFile ? asset.meta : "No file attached"}`}
                     icon={Upload}
                   />
                 ))}
@@ -291,8 +308,16 @@ function AdminModuleDetail() {
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-primary-soft px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
-                          {lesson.state}
+                        <span
+                          className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                            lesson.publishState === "published"
+                              ? "bg-success/15 text-success"
+                              : lesson.publishState === "draft"
+                                ? "bg-gold-soft text-primary-deep"
+                                : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {lesson.publishLabel}
                         </span>
                         <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                           {lesson.attachedAssets} assets
@@ -373,12 +398,12 @@ function AdminModuleDetail() {
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <span
                     className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                      resource.status === "published"
+                      resource.publishState === "published"
                         ? "bg-success/15 text-success"
                         : "bg-gold-soft text-primary-deep"
                     }`}
                   >
-                    {resource.status}
+                    {resource.publishLabel}
                   </span>
                   <Link
                     to={resource.href}

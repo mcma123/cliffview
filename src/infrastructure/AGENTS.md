@@ -6,7 +6,8 @@ Adapters and composition: the seeded in-memory repository implementation plus th
 
 ## Ownership
 
-- Owns `academy/container.ts` — the single wiring point between use cases and a repository instance
+- Owns `convex/client.ts` — the `ConvexQueryClient` + `QueryClient` factory. One set per router instance, never module-scope: an auth token is per-request state, and `expectAuth` flips to true in Phase 4
+- Owns `academy/container.ts` — the shrinking wiring point between use cases and the in-memory repository, deleted at Phase 8
 - Owns `academy/in-memory-academy-repository.ts` — the prototype data source implementing `AcademyRepository`
 - Owns nothing about view-model shape; that is `src/application`
 
@@ -15,8 +16,8 @@ Adapters and composition: the seeded in-memory repository implementation plus th
 - `container.ts` is the only module in this layer the UI may import. It exposes `academyQueries` (reads) and `academyCommands` (writes) and holds one module-scope `InMemoryAcademyRepository`
 - Every new use case must be registered in `academyQueries` or `academyCommands`, passing route params through as arguments — do not partially apply params at import time
 - The container instance is module-scope and therefore shared across SSR requests. Never store per-request or per-user state on it
-- Swapping in a real backend means a new class implementing `AcademyRepository` and one line changed in `container.ts`. `application`, `routes`, and `components` stay untouched unless the port goes async
-- Convex is the intended backend (see `convex/AGENTS.md`). A Convex-backed repository belongs in this layer — never call Convex from `routes` or `components`. Convex clients are async while `AcademyRepository` is synchronous, so adopting it forces the port to async: a single cross-layer change through `domain`, `application`, `infrastructure`, and every route loader
+- Superseded: there is no `ConvexAcademyRepository`, and the port is not going async. The Convex generated `api` plus `Doc<>`/`Id<>` types are the port, and route loaders call it directly. See `ADMIN_BACKEND.md` for the decision and `src/routes/AGENTS.md` for the pattern
+- Convex client construction belongs in this layer (`convex/client.ts`). Route loaders and route components then talk to the typed API directly; shared components in `src/components` still never import Convex
 - `in-memory-academy-repository.ts` is seed data, treated as read-only: no method mutates state, which is why every admin write dialog is UI-only. Do not add mutation here without also adding a write-side port in `src/domain`
 - Seeded identifiers other code depends on:
   - 9 module slugs: `school-code-of-conduct`, `social-media-awareness`, `learner-discipline`, `health-and-safety`, `safeguarding-and-reporting`, `disciplinary-hearings`, `sasa-and-bela-compliance`, `responsible-ai-usage`, `parent-communication-protocol`

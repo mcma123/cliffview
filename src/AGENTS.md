@@ -12,7 +12,8 @@ All application source for the Cliffview Academy portal: the four Clean Architec
 
 ## Local Contracts
 
-- Dependency rule, outermost to innermost: `routes` and `components` -> `infrastructure/academy/container` -> `application` -> `domain`. Source dependencies point inward only
+- Dependency rule for migrated code: `routes` -> `convex/_generated` (the typed backend API) and `application/academy/presenters` (pure view-model builders). Presenters take data, never a repository
+- Dependency rule for code still on the container: `routes` -> `infrastructure/academy/container` -> `application/academy/use-cases` -> `domain`. Source dependencies point inward only
 - `domain` imports nothing outside `@/domain`
 - `application` imports domain types and the `AcademyRepository` port, nothing else
 - `infrastructure` implements the port and wires the container
@@ -32,8 +33,8 @@ Entry points owned here:
 ## Work Guidance
 
 - Page data flow: route `loader` calls `academyQueries.*`, component reads `Route.useLoaderData()`. Keep label text, formatting, and href construction in `application`, not in components
-- The repository port is synchronous. Making it async is a cross-layer change touching `domain`, `application`, `infrastructure`, and every route loader — do it in one pass, not piecemeal
-- `QueryClientProvider` is mounted in `routes/__root.tsx`, but routes currently load through TanStack Router loaders rather than TanStack Query. Pick one per feature and say which in the route doc
+- The repository port is synchronous and is being retired rather than made async. Convex is the port now; `AcademyRepository` survives only for the routes not yet migrated and is deleted at Phase 8
+- TanStack Query is now the repo-wide data layer for Convex reads: `src/router.tsx` builds a `ConvexQueryClient`, sets its `hashFn`/`queryFn` as query defaults, and calls `setupRouterSsrQueryIntegration`. `routes/__root.tsx` mounts `ConvexProvider` above `QueryClientProvider`. Both clients are created per router by `src/infrastructure/convex/client.ts` — never module-scope, because an auth token is per-request state
 
 ## Verification
 

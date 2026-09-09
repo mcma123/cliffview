@@ -1,16 +1,38 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { presentAdminAssetDetail } from "@/application/academy/presenters";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { ArrowLeft, Eye, FileText, Headphones, Upload, Video } from "lucide-react";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/assets/$assetId")({
   head: () => ({ meta: [{ title: "Asset Editor · Cliffview Academy" }] }),
-  loader: ({ params }) => academyQueries.getAdminAssetDetail(params.moduleSlug, params.assetId),
+  loader: async ({ context, params }) => {
+    // $assetId is a Convex document id now. The old ids were derived from the
+    // module slug, which broke as soon as a module had two videos.
+    await context.queryClient.ensureQueryData(
+      convexQuery(api.assets.adminDetail, {
+        moduleSlug: params.moduleSlug,
+        assetId: params.assetId as Id<"assets">,
+      }),
+    );
+    return { now: Date.now() };
+  },
   component: AdminAssetEditor,
 });
 
 function AdminAssetEditor() {
-  const data = Route.useLoaderData();
+  const { moduleSlug, assetId } = Route.useParams();
+  const { now } = Route.useLoaderData();
+  const { data: detail } = useSuspenseQuery(
+    convexQuery(api.assets.adminDetail, {
+      moduleSlug,
+      assetId: assetId as Id<"assets">,
+    }),
+  );
+  const data = presentAdminAssetDetail(detail, now);
   const AssetIcon =
     data.assetKind === "audio" ? Headphones : data.assetKind === "video" ? Video : FileText;
 
@@ -84,6 +106,7 @@ function AdminAssetEditor() {
                 </span>
                 <input
                   defaultValue={data.assetMeta}
+                  readOnly
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
               </label>
@@ -92,7 +115,7 @@ function AdminAssetEditor() {
                   Publish state
                 </span>
                 <div className="rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground">
-                  {data.assetStatus}
+                  {data.publishLabel}
                 </div>
               </label>
             </div>
@@ -132,18 +155,27 @@ function AdminAssetEditor() {
             </section>
 
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Editor hints</p>
-              <div className="mt-5 space-y-3">
-                {data.uploadHints.map((hint) => (
-                  <div
-                    key={hint.title}
-                    className="rounded-2xl border border-dashed border-border bg-background p-5"
-                  >
-                    <h3 className="font-semibold text-foreground">{hint.title}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">{hint.description}</p>
-                  </div>
-                ))}
-              </div>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">File</p>
+              <dl className="mt-5 space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+                  <dt className="text-muted-foreground">Attached file</dt>
+                  <dd className="font-semibold text-foreground">{data.fileName ?? "None yet"}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+                  <dt className="text-muted-foreground">Details</dt>
+                  <dd className="font-semibold text-foreground">{data.assetMeta}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+                  <dt className="text-muted-foreground">Module hero</dt>
+                  <dd className="font-semibold text-foreground">
+                    {data.isFeatured ? "Yes" : "No"}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+                  <dt className="text-muted-foreground">Last edited</dt>
+                  <dd className="font-semibold text-foreground">{data.updatedLabel}</dd>
+                </div>
+              </dl>
             </section>
           </div>
         </div>

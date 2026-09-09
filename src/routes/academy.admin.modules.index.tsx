@@ -1,16 +1,28 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { presentAdminModuleLibrary } from "@/application/academy/presenters";
+import { api } from "../../convex/_generated/api";
 import { BookOpen, FileText, Plus, Search, Sparkles, Video } from "lucide-react";
 
 export const Route = createFileRoute("/academy/admin/modules/")({
   head: () => ({ meta: [{ title: "Module Admin · Cliffview Academy" }] }),
-  loader: () => academyQueries.getAdminModuleLibrary(),
+  loader: async ({ context }) => {
+    await context.queryClient.ensureQueryData(convexQuery(api.modules.listForAdmin, {}));
+    // `now` is captured per request so relative labels are stable for a render
+    // and the query itself stays free of wall-clock reads.
+    return { now: Date.now() };
+  },
   component: AdminModuleLibrary,
 });
 
 function AdminModuleLibrary() {
-  const data = Route.useLoaderData();
+  const { now } = Route.useLoaderData();
+  // Live subscription on the client: an edit elsewhere repaints this grid with
+  // no refetch code.
+  const { data: rows } = useSuspenseQuery(convexQuery(api.modules.listForAdmin, {}));
+  const data = presentAdminModuleLibrary(rows, now);
 
   return (
     <AdminShell>
@@ -73,13 +85,15 @@ function AdminModuleLibrary() {
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
-                to="/academy/admin/modules/parent-communication-protocol"
+                to="/academy/admin/modules/$moduleSlug"
+                params={{ moduleSlug: "parent-communication-protocol" }}
                 className="rounded-2xl border border-border bg-background px-4 py-3 text-sm font-semibold text-foreground hover:bg-muted"
               >
                 Open editor
               </Link>
               <Link
-                to="/academy/modules/parent-communication-protocol"
+                to="/academy/modules/$moduleSlug"
+                params={{ moduleSlug: "parent-communication-protocol" }}
                 className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
               >
                 Open learner preview
@@ -105,16 +119,14 @@ function AdminModuleLibrary() {
                 </div>
                 <span
                   className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                    module.status === "complete"
+                    module.publishState === "published"
                       ? "bg-success/15 text-success"
-                      : module.status === "in-progress"
+                      : module.publishState === "draft"
                         ? "bg-gold-soft text-primary-deep"
-                        : module.status === "available"
-                          ? "bg-primary-soft text-primary"
-                          : "bg-muted text-muted-foreground"
+                        : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {module.status}
+                  {module.publishLabel}
                 </span>
               </div>
 
