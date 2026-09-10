@@ -23,6 +23,7 @@ import type * as modules from "../modules.js";
 import type * as objectives from "../objectives.js";
 import type * as seed from "../seed.js";
 import type * as seed_data from "../seed/data.js";
+import type * as staff from "../staff.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   objectives: typeof objectives;
   seed: typeof seed;
   "seed/data": typeof seed_data;
+  staff: typeof staff;
   validators: typeof validators;
 }>;
 

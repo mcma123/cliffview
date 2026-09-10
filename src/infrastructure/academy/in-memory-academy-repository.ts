@@ -5,7 +5,6 @@ import type {
   ModuleSection,
   StaffDashboardSnapshot,
   TrainingModule,
-  AdminStaffProfile,
 } from "@/domain/academy/entities";
 import type { AcademyRepository } from "@/domain/academy/repositories";
 
@@ -642,131 +641,6 @@ const aiReviewQuestions: AiReviewQuestion[] = [
   },
 ];
 
-const adminStaffProfiles: AdminStaffProfile[] = [
-  {
-    id: "staff-01",
-    firstName: "Priya",
-    lastName: "Ms. Naidoo",
-    role: "Teacher",
-    phase: "Foundation Phase",
-    compliancePercent: 88,
-    completedModulesCount: 3,
-    totalAssignedModules: 5,
-    cptdPoints: 12,
-    xpTotal: 3450,
-    recentActivityLabel: "Active today",
-    modules: [
-      {
-        moduleSlug: "school-code-of-conduct",
-        moduleTitle: "School Code of Conduct",
-        category: "Core Policies",
-        status: "complete",
-        progressPercent: 100,
-        score: 95,
-        lastAccessedLabel: "2 days ago",
-      },
-      {
-        moduleSlug: "social-media-awareness",
-        moduleTitle: "Social Media Awareness",
-        category: "Core Policies",
-        status: "in-progress",
-        progressPercent: 65,
-        lastAccessedLabel: "Today",
-      },
-      {
-        moduleSlug: "learner-discipline",
-        moduleTitle: "Learner Discipline",
-        category: "Core Policies",
-        status: "available",
-        progressPercent: 0,
-        lastAccessedLabel: "Never",
-      },
-      {
-        moduleSlug: "parent-communication-protocol",
-        moduleTitle: "Parent Communication Protocol",
-        category: "Staff Development",
-        status: "available",
-        progressPercent: 0,
-        lastAccessedLabel: "Never",
-      },
-      {
-        moduleSlug: "responsible-ai-usage",
-        moduleTitle: "Responsible AI Usage",
-        category: "Staff Development",
-        status: "complete",
-        progressPercent: 100,
-        score: 80,
-        lastAccessedLabel: "1 week ago",
-      },
-    ],
-  },
-  {
-    id: "staff-02",
-    firstName: "Hendrik",
-    lastName: "Mr. van Wyk",
-    role: "Head of Department",
-    phase: "Senior Phase",
-    compliancePercent: 100,
-    completedModulesCount: 6,
-    totalAssignedModules: 6,
-    cptdPoints: 24,
-    xpTotal: 5200,
-    recentActivityLabel: "Active 2 days ago",
-    modules: [
-      {
-        moduleSlug: "school-code-of-conduct",
-        moduleTitle: "School Code of Conduct",
-        category: "Core Policies",
-        status: "complete",
-        progressPercent: 100,
-        score: 100,
-        lastAccessedLabel: "3 months ago",
-      },
-      {
-        moduleSlug: "disciplinary-hearings",
-        moduleTitle: "Disciplinary Hearings",
-        category: "SMT Pathway",
-        status: "complete",
-        progressPercent: 100,
-        score: 92,
-        lastAccessedLabel: "2 days ago",
-      },
-    ],
-  },
-  {
-    id: "staff-03",
-    firstName: "Zanele",
-    lastName: "Mrs. Dlamini",
-    role: "Teacher",
-    phase: "Intersen Phase",
-    compliancePercent: 40,
-    completedModulesCount: 2,
-    totalAssignedModules: 5,
-    cptdPoints: 8,
-    xpTotal: 1800,
-    recentActivityLabel: "Active 1 week ago",
-    modules: [
-      {
-        moduleSlug: "school-code-of-conduct",
-        moduleTitle: "School Code of Conduct",
-        category: "Core Policies",
-        status: "complete",
-        progressPercent: 100,
-        score: 85,
-        lastAccessedLabel: "1 month ago",
-      },
-      {
-        moduleSlug: "social-media-awareness",
-        moduleTitle: "Social Media Awareness",
-        category: "Core Policies",
-        status: "available",
-        progressPercent: 0,
-        lastAccessedLabel: "Never",
-      },
-    ],
-  },
-];
-
 export class InMemoryAcademyRepository implements AcademyRepository {
   getStaffDashboardSnapshot() {
     return staffDashboardSnapshot;
@@ -786,13 +660,5 @@ export class InMemoryAcademyRepository implements AcademyRepository {
 
   listAiReviewQuestions() {
     return aiReviewQuestions;
-  }
-
-  listAdminStaffProfiles() {
-    return adminStaffProfiles;
-  }
-
-  getAdminStaffProfileById(id: string) {
-    return adminStaffProfiles.find((staff) => staff.id === id);
   }
 }

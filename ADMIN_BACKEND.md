@@ -337,7 +337,7 @@ Status:
 
 - [ ] Completed
 
-Consent gate: **G9** — staff and AI review (schema change on PII: export and rehearse first).
+Consent gate: **G9** — staff and AI review. **The staff half needed no schema change**: every field the console writes (`honorific`, `preferredName`, `jobTitle`, `accessRole`, `phaseId`, `employmentStatus`) already existed from Phase 1, so it went out as a function-only push. The AI review half still carries a schema change and still needs export-and-rehearse.
 
 Goal:
 
@@ -345,12 +345,13 @@ Goal:
 
 Tasks:
 
-- [ ] `convex/phases.ts`, `convex/staff.ts` (`directory`, `detail`, `leaderboard`), `convex/enrollments.ts`, `recomputeCompliance`
+- [~] `convex/staff.ts` — **partly landed early, out of phase order, on request.** `directory` and `detail` are live, and so are `create`, `update` and `setEmploymentStatus`, which the plan had not listed at all: it assumed staff screens were read-only. `recomputeCompliance` ships as a private helper called on every edit rather than a public mutation. Still outstanding here: `leaderboard`, `convex/phases.ts` and `convex/enrollments.ts` (assigning modules to people)
+- [~] Deletion is deliberately absent. `employmentStatus: "inactive"` is the delete, because a `users` row is referenced by enrollments, progress, attempts and the audit log and is the identity an auth account binds to
 - [ ] `convex/aiReview.ts` — `queue`, real counts via `by_status`, and `setDecision` writing an append-only `aiReviewDecisions` row with reviewer identity and timestamp
 - [ ] Delete the `setInterval` generation simulation and the `Date.now()`-keyed fake questions; question ids become `Id<"aiQuestions">` (so `AiReviewQuestion.id: number` changes type) and `moduleTitle` becomes a joined field off `moduleId`
 - [ ] Delete `academyCommands` and `applyAiReviewDecision` — a local-state reducer replaced by a real mutation
-- [ ] Rewire `academy.admin.staff.index`, `academy.admin.staff.$staffId`, `academy.admin.ai-review`
-- [ ] Move the staff presenters over; delete the `.replace("Ms. ", "")` initials hack; fix the directory avatar to use `firstName[0]`
+- [~] Rewired `academy.admin.staff.index` (directory, real search, create) and `academy.admin.staff.$staffId` (edit, deactivate/reinstate). `academy.admin.ai-review` is still on the container
+- [x] Moved the staff presenters over; deleted the `.replace("Ms. ", "")` initials hack, the two dead use-cases and the 125-line duplicate in-memory staff list; the directory avatar now shows both real initials
 - [ ] Dashboard: derived counters, a `monthlyRollups` range scan for the trend, per-phase averages from `by_phase`. The four `+N` delta tiles stay gone until a monthly snapshot exists to compare against — add the cron that starts recording one
 - [ ] Make the "Last 30 days" button real or remove it; honest labels are required
 - [ ] Add `.withOptimisticUpdate(...)` to `setDecision` only — the one screen where an admin clicks through many items in a row

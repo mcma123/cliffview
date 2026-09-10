@@ -22,6 +22,8 @@ type ModuleLibrary = FunctionReturnType<typeof api.modules.listForAdmin>;
 type ModuleDetail = FunctionReturnType<typeof api.modules.adminDetail>;
 type LessonDetail = FunctionReturnType<typeof api.lessons.adminDetail>;
 type AssetDetail = FunctionReturnType<typeof api.assets.adminDetail>;
+type StaffDirectory = FunctionReturnType<typeof api.staff.directory>;
+type StaffDetail = FunctionReturnType<typeof api.staff.detail>;
 
 type PublishState = "draft" | "published" | "archived";
 type AssetKind = "video" | "audio" | "document" | "worksheet";
@@ -128,6 +130,10 @@ export function getAdminModuleHref(slug: string): string {
 
 export function getAdminLessonHref(moduleSlug: string, lessonSlug: string): string {
   return `/academy/admin/modules/${moduleSlug}/lessons/${lessonSlug}`;
+}
+
+export function getAdminStaffHref(staffId: string): string {
+  return `/academy/admin/staff/${staffId}`;
 }
 
 export function getAdminAssetHref(moduleSlug: string, assetId: string): string {
@@ -388,6 +394,164 @@ export function presentAdminAssetDetail(data: AssetDetail, now: number) {
       durationLabel: formatLessonDuration(lesson.kind, lesson.durationMinutes),
       href: getAdminLessonHref(module.slug, lesson.slug),
       previewHref: getLessonPreviewHref(module.slug, lesson.slug),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Staff
+// ---------------------------------------------------------------------------
+
+/** Name parts are stored split, so a display name is assembled, never parsed. */
+type NameParts = {
+  /**
+   * Nullable, not just optional. A cleared optional field can come back as
+   * `null` rather than absent, and an `=== undefined` check would then render
+   * the string "null" in front of somebody's name.
+   */
+  honorific?: string | null;
+  firstName: string;
+  lastName: string;
+  preferredName?: string | null;
+};
+
+export function formatStaffName(user: NameParts): string {
+  const honorific =
+    user.honorific === undefined || user.honorific === null || user.honorific.trim().length === 0
+      ? ""
+      : `${user.honorific.trim()} `;
+  return `${honorific}${user.firstName} ${user.lastName}`.trim();
+}
+
+/**
+ * Initials from the two name fields.
+ *
+ * The old version did
+ * `lastName.replace("Ms. ", "").replace("Mr. ", "").replace("Mrs. ", "")[0]`,
+ * because the seed had baked the honorific into `lastName`. The schema splits
+ * them, so there is nothing to strip — and that chain silently produced the
+ * wrong letter for any honorific it did not list, "Dr." among them.
+ */
+export function formatStaffInitials(user: NameParts): string {
+  return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+}
+
+/** Never "0%" for someone who has simply never been assigned anything. */
+export function formatCompliance(assignedModules: number, compliancePercent: number): string {
+  return assignedModules === 0 ? "No modules assigned" : `${compliancePercent}%`;
+}
+
+function formatLastActive(lastActiveAt: number | undefined, now: number): string {
+  return lastActiveAt === undefined ? "Never signed in" : formatRelativeTime(lastActiveAt, now);
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  staff: "Staff",
+  smt_admin: "SMT admin",
+  super_admin: "System operator",
+};
+
+export function formatAccessRole(role: string): string {
+  return ROLE_LABELS[role] ?? role;
+}
+
+export function presentAdminStaffDirectory(data: StaffDirectory, now: number) {
+  const rows = data.staff.map((row) => ({
+    id: row.user._id,
+    name: formatStaffName(row.user),
+    initials: formatStaffInitials(row.user),
+    email: row.user.email,
+    jobTitle: row.user.jobTitle,
+    accessRole: row.user.accessRole,
+    accessRoleLabel: formatAccessRole(row.user.accessRole),
+    phaseName: row.phaseName,
+    isActive: row.user.employmentStatus === "active",
+    compliancePercent: row.user.compliancePercent,
+    complianceLabel: formatCompliance(row.assignedModules, row.user.compliancePercent),
+    assignedModules: row.assignedModules,
+    completedModules: row.completedModules,
+    cptdPoints: row.user.cptdPoints,
+    lastActiveLabel: formatLastActive(row.user.lastActiveAt, now),
+    href: getAdminStaffHref(row.user._id),
+  }));
+
+  // Summaries describe **active** staff only, matching dashboard.adminOverview.
+  // Averaging in someone who has left would make the school look less compliant
+  // than it is, and the two screens would disagree.
+  const active = rows.filter((row) => row.isActive);
+  const totalStaff = active.length;
+
+  return {
+    summary: {
+      totalStaff,
+      inactiveStaff: rows.length - totalStaff,
+      avgCompliance:
+        totalStaff === 0
+          ? 0
+          : Math.round(active.reduce((sum, row) => sum + row.compliancePercent, 0) / totalStaff),
+      highPerformers: active.filter((row) => row.compliancePercent >= 80).length,
+    },
+    rows,
+    phaseOptions: data.phases.map((phase) => ({ id: phase._id, name: phase.name })),
+  };
+}
+
+const ENROLLMENT_LABELS: Record<string, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  completed: "Completed",
+  waived: "Waived",
+};
+
+export function presentAdminStaffDetail(data: StaffDetail, now: number) {
+  const { user, modules } = data;
+  const completed = modules.filter((row) => row.enrollment.status === "completed").length;
+
+  return {
+    id: user._id,
+    name: formatStaffName(user),
+    initials: formatStaffInitials(user),
+    email: user.email,
+    jobTitle: user.jobTitle,
+    accessRole: user.accessRole,
+    accessRoleLabel: formatAccessRole(user.accessRole),
+    phaseId: user.phaseId,
+    phaseName: data.phaseName,
+    isActive: user.employmentStatus === "active",
+    compliancePercent: user.compliancePercent,
+    complianceLabel: formatCompliance(modules.length, user.compliancePercent),
+    // The edit form needs the raw fields, not the display strings, or saving
+    // would write "Mr. Hendrik" back into firstName.
+    form: {
+      honorific: user.honorific ?? "",
+      firstName: user.firstName,
+      lastName: user.lastName,
+      preferredName: user.preferredName ?? "",
+      email: user.email,
+      jobTitle: user.jobTitle,
+      accessRole: user.accessRole,
+      phaseId: user.phaseId,
+    },
+    phaseOptions: data.phases.map((phase) => ({ id: phase._id, name: phase.name })),
+    stats: [
+      { label: "Modules completed", value: `${completed} / ${modules.length}` },
+      { label: "CPTD points", value: `${user.cptdPoints} pts` },
+      { label: "Total XP", value: `${user.xpTotal}` },
+      { label: "Last active", value: formatLastActive(user.lastActiveAt, now) },
+    ],
+    modules: modules.map(({ enrollment, module }) => ({
+      id: enrollment._id,
+      moduleTitle: module.title,
+      category: module.category,
+      status: enrollment.status,
+      statusLabel: ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status,
+      progressPercent: enrollment.progressPercent,
+      scoreLabel: enrollment.score === undefined ? "—" : `${enrollment.score}%`,
+      lastAccessedLabel:
+        enrollment.lastAccessedAt === undefined
+          ? "Not opened"
+          : formatRelativeTime(enrollment.lastAccessedAt, now),
+      href: getAdminModuleHref(module.slug),
     })),
   };
 }

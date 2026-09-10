@@ -37,3 +37,7 @@ From the repo root: `npx tsc --noEmit` and `npm run lint`. Note that `use-cases.
 ## Child DOX Index
 
 No children.
+
+- Staff presenters live here now; `getAdminStaffDirectory` and `getAdminStaffDetail` are gone from `use-cases.ts`, along with the 125-line in-memory staff list that fed them. Two staff lists in one repo, one of them stale, is worse than none
+- `formatStaffInitials` takes both letters from `firstName` and `lastName`. The old version ran `lastName.replace("Ms. ", "").replace("Mr. ", "").replace("Mrs. ", "")[0]` because the seed had baked the honorific into the surname; the schema splits them, and that chain returned the wrong letter for any honorific it did not list — "Dr." among them
+- `formatStaffName` treats a null honorific like an absent one. A cleared optional field can read back as `null`, and an `=== undefined` check renders the string "null" in front of somebody's name

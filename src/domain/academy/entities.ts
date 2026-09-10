@@ -16,26 +16,6 @@ export interface StaffMember {
   phase: string;
 }
 
-export interface AdminStaffModuleProgress {
-  moduleSlug: string;
-  moduleTitle: string;
-  category: ModuleCategory;
-  status: ModuleStatus;
-  progressPercent: number;
-  lastAccessedLabel?: string;
-  score?: number;
-}
-
-export interface AdminStaffProfile extends StaffMember {
-  compliancePercent: number;
-  completedModulesCount: number;
-  totalAssignedModules: number;
-  cptdPoints: number;
-  xpTotal: number;
-  recentActivityLabel: string;
-  modules: AdminStaffModuleProgress[];
-}
-
 export interface ModuleAsset {
   id: string;
   title: string;

@@ -16,6 +16,17 @@ export default defineConfig({
   test: {
     environment: "edge-runtime",
     /**
+     * Every test builds a fresh in-memory Convex and registers two components
+     * (`r2` and the `r2/actionRetrier` nested inside it), which costs real time
+     * before a single assertion runs. Vitest's 5s default was enough for two
+     * test files and started timing out at five, in whichever file lost the
+     * race for a worker — which looked like flaky authz tests and was really
+     * just setup exceeding the clock. Raised rather than worked around: the
+     * suite is deliberately parallel and takes ~5s in total.
+     */
+    testTimeout: 30000,
+    hookTimeout: 30000,
+    /**
      * The R2 component reads its credentials from `process.env` in its
      * constructor, which runs when `convex/lib/storage.ts` is first imported.
      * Set here rather than in a test file so the values exist before any module
