@@ -70,7 +70,7 @@ function RoleGate() {
         title="We could not load your profile"
         action={
           <Link
-            to="/academy/sign-in"
+            to="/academy/admin/sign-in"
             className="inline-flex items-center justify-center rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
           >
             Back to sign in
@@ -121,7 +121,7 @@ function AdminGate() {
         title="Sign in to continue"
         action={
           <Link
-            to="/academy/sign-in"
+            to="/academy/admin/sign-in"
             className="inline-flex items-center justify-center rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
           >
             Sign in

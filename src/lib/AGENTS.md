@@ -36,3 +36,6 @@ From the repo root: `npx tsc --noEmit` and `npm run lint`. For the error path, c
 ## Child DOX Index
 
 No children.
+
+- `staff-identifier.ts` resolves what someone types in a sign-in box to an email. There is no username column and there deliberately isn't one: the `Password` provider keys accounts on email and `createOrUpdateUser` looks people up by `users.email`, so a real username field would mean a second lookup path and a second uniqueness invariant over the same table. Anything without an `@` gets `CLIFFVIEW_EMAIL_DOMAIN` appended, so `admin` signs in as `admin@cliffview.example`
+- `CLIFFVIEW_EMAIL_DOMAIN` must match the domain on the seeded `users` rows. Change it and the seed together, or every bare username resolves to an address that is not provisioned and sign-in fails with `NOT_PROVISIONED`

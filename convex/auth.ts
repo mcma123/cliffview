@@ -183,6 +183,118 @@ export const allowAdminClaim = internalMutation({
 });
 
 /**
+ * Create (or repair) the operator account and open its claim window.
+ *
+ * `internalMutation`, so it is unreachable from any client — this is the one
+ * function that can mint an administrator, and it exists because there is no
+ * staff-create mutation until Phase 7. Run it, then set the password through
+ * `/academy/admin/sign-in` with the "Set up my password" flow, or headlessly
+ * via the `auth:signIn` action with `flow: "signUp"`:
+ *
+ *   npx convex run auth:provisionAdmin '{"email":"admin@cliffview.example"}'
+ *
+ * `super_admin` rather than `smt_admin` on purpose. It marks this row as an
+ * operator login rather than a member of teaching staff, which is what lets
+ * `dashboard.adminOverview` leave it out of headcount and compliance without
+ * needing a new schema field. A staff row that counted towards school-wide
+ * compliance while belonging to nobody would make those tiles lie, and the
+ * locked decision for this project is that no displayed number is a literal.
+ *
+ * Idempotent: re-running it repairs role and status and re-opens the window
+ * rather than inserting a second row.
+ */
+export const provisionAdmin = internalMutation({
+  args: {
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+    jobTitle: v.optional(v.string()),
+    minutes: v.optional(v.number()),
+  },
+  returns: v.object({
+    userId: v.id("users"),
+    email: v.string(),
+    accessRole: v.string(),
+    created: v.boolean(),
+    hasPassword: v.boolean(),
+    allowedUntil: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const email = args.email.trim().toLowerCase();
+    if (email.length === 0 || !email.includes("@")) {
+      throw new ConvexError({
+        code: "INVALID",
+        message: "An operator account needs a full email address.",
+      });
+    }
+
+    const minutes = Math.min(Math.max(args.minutes ?? 60, 1), 24 * 60);
+    const allowedUntil = Date.now() + minutes * 60 * 1000;
+
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", email))
+      .unique();
+
+    let userId: Id<"users">;
+    let created: boolean;
+
+    if (existing === null) {
+      // `phaseId` is required on every user, and an operator belongs to no
+      // teaching phase. The first active phase is used as a placeholder, which
+      // is only defensible because the per-phase averages exclude this row for
+      // the same reason the school-wide ones do.
+      const phase = await ctx.db.query("phases").withIndex("by_order").first();
+      if (phase === null) {
+        throw new ConvexError({
+          code: "INVALID",
+          message: "No phases exist yet; seed the deployment before provisioning an operator.",
+        });
+      }
+
+      userId = await ctx.db.insert("users", {
+        firstName: args.firstName ?? "System",
+        lastName: args.lastName ?? "Administrator",
+        email,
+        jobTitle: args.jobTitle ?? "System Administrator",
+        accessRole: "super_admin",
+        phaseId: phase._id,
+        employmentStatus: "active",
+        cptdPoints: 0,
+        xpTotal: 0,
+        compliancePercent: 0,
+        adminClaimAllowedUntil: allowedUntil,
+      });
+      created = true;
+    } else {
+      userId = existing._id;
+      created = false;
+      await ctx.db.patch("users", userId, {
+        accessRole: "super_admin",
+        employmentStatus: "active",
+        adminClaimAllowedUntil: allowedUntil,
+      });
+    }
+
+    // Reported back so the caller knows whether the password still has to be
+    // set, rather than having to guess from a bare success.
+    const account = await ctx.db
+      .query("authAccounts")
+      .withIndex("userIdAndProvider", (q) => q.eq("userId", userId).eq("provider", "password"))
+      .unique();
+
+    return {
+      userId,
+      email,
+      accessRole: "super_admin",
+      created,
+      hasPassword: account !== null,
+      allowedUntil,
+    };
+  },
+});
+
+/**
  * Whether a profile has an auth account yet. Read-only and internal, for
  * checking provisioning state from the CLI without exposing account data.
  */

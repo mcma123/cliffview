@@ -59,10 +59,18 @@ export const adminOverview = query({
     // One bounded scan over active staff answers headcount, the school-wide
     // average, and the per-phase breakdown. Staff per school is small by
     // design, so this stays cheaper than a scan per phase.
-    const activeStaff = await ctx.db
+    const activeUsers = await ctx.db
       .query("users")
       .withIndex("by_employmentStatus_and_xpTotal", (q) => q.eq("employmentStatus", "active"))
       .take(MAX_STAFF);
+
+    // `super_admin` marks an operator login, not a member of teaching staff.
+    // Counting one would add a person who does not exist to headcount and drag
+    // school-wide compliance towards zero, since an operator has no modules and
+    // no CPTD points to earn — three tiles reporting a number nobody could
+    // reconcile against the staff list. `smt_admin` is a real person with a job
+    // title and does still count.
+    const activeStaff = activeUsers.filter((user) => user.accessRole !== "super_admin");
 
     const totalStaff = activeStaff.length;
     const averageCompliancePercent =
