@@ -314,7 +314,7 @@ Verification:
 - [x] R2 credentials proven end to end against the real bucket, outside Convex, using the same AWS SDK the component uses: PUT, presign, fetch (HTTP 200, byte-identical), delete, then re-fetch returning 404. That last step is the mechanism behind "replacing a file deletes the old blob". The probe object was removed; the bucket is as it was found
 - [x] Prod function surface confirmed: 42 functions, with `applySyncedMetadata` and `onSyncMetadata` **internal** and the four upload mutations public and admin-gated
 - [x] `by_r2Key` resolves on prod. The push logged deleting `by_storageId` but no matching add, so this was probed directly — Convex throws on an unknown index, and a no-op call through that index returned cleanly
-- [ ] Sign in as an admin, re-proving Convex Auth survived codegen switching to component mode
+- [x] Convex Auth survived codegen switching to component mode. Proven against prod rather than in a browser: a real Convex Auth token was minted through `auth:signIn` and used against the deployment's HTTP query API, where `auth.viewer` resolved it to `isAdmin: true` and `dashboard.adminOverview` let it past `requireAdmin`. Token issuance and verification both work after the component push
 - [ ] Uploading a real PDF through the admin UI works, and `npx convex data assets` shows the `r2Key`
 - [ ] Replacing the file through the UI deletes the old blob
 - [ ] A `staff` account is refused an upload URL in the running app
