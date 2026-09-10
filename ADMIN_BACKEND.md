@@ -206,7 +206,7 @@ Tasks:
 - [x] `src/routes/academy.sign-in.tsx` — real submit and error states; `src/routes/index.tsx`
 - [x] Gated the four content queries with **`requireAdmin`** rather than the planned `requireStaff` — they expose draft and archived content, and being signed in as staff is not the same as being allowed to see unpublished material. Flipped `dashboard.adminOverview` to a public query behind `requireAdmin` and wired the overview screen
 - [~] `convex/convex.config.ts` — **still not needed.** Convex Auth is a library, not a component; its tables are spread into our schema via `...authTables`
-- [x] `src/router.tsx` — `expectAuth: true` and the real token getter
+- [~] `src/router.tsx` — the real token getter. `expectAuth: true` was set here and **was a bug**: it holds back actions as well as queries and starts the client paused, so with nobody signed in the socket never resumed and `auth:signIn` could never be sent. The sign-in button froze with no error and no server log. Removed; `src/infrastructure/AGENTS.md` records why it must not return
 - [x] `convex/seed.ts` — the `email` index rename Convex Auth requires. Profiles are linked at first sign-in by `createOrUpdateUser` rather than by the seed, so no seed-time linking is needed
 - [x] Set prod env vars (`BETTER_AUTH_SECRET`, `SITE_URL` — must match the deployed origin, not localhost)
 - [x] DOX pass: `src/routes/AGENTS.md` (remove "Sign-in is UI only", add the guard contract and the layout exception), `src/lib/AGENTS.md`, `convex/AGENTS.md` (required env vars, the `requireAdmin`-on-every-mutation rule), root `AGENTS.md`
@@ -389,7 +389,7 @@ Tasks:
 - [ ] Strip learner-state fields from `src/domain/academy/entities.ts`, keeping the string unions
 - [ ] With the user's explicit go-ahead, delete the legacy overlapping `academy.modules.social-media-*` routes
 - [ ] Vercel `CONVEX_DEPLOY_KEY` and build command so `npx convex deploy` runs at build time
-- [ ] Revisit the `expectAuth` decision now that learner routes authenticate
+- [x] The `expectAuth` decision — **settled by removing it.** It made in-app sign-in impossible, and the component gate already does the job it was added for. Nothing to revisit at Phase 8
 - [ ] Final DOX pass across all 10 `AGENTS.md` files; close `MODULE_UI_PHASES.md` Phase 4
 
 Verification:

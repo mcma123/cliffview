@@ -6,7 +6,8 @@ Adapters and composition: the seeded in-memory repository implementation plus th
 
 ## Ownership
 
-- Owns `convex/client.ts` — the `ConvexQueryClient` + `QueryClient` factory. One set per router instance, never module-scope: an auth token is per-request state, and `expectAuth` flips to true in Phase 4
+- Owns `convex/client.ts` — the `ConvexQueryClient` + `QueryClient` factory. One set per router instance, never module-scope: an auth token is per-request state
+- **Never set `expectAuth: true` on that client.** It holds back queries, mutations _and_ actions until the first token is sent, and the client starts paused; only `client.setAuth` resumes it, and `ConvexProviderWithAuth` calls that only once it already believes you are authenticated. Signed out, the socket never resumes and `auth:signIn` — an action — is held back with it, so signing in becomes impossible. It shipped in Phase 4 and froze the sign-in button on "Signing in…" with no error and no server log, because no request left the browser
 - Owns `academy/container.ts` — the shrinking wiring point between use cases and the in-memory repository, deleted at Phase 8
 - Owns `academy/in-memory-academy-repository.ts` — the prototype data source implementing `AcademyRepository`
 - Owns nothing about view-model shape; that is `src/application`
