@@ -13,10 +13,8 @@ import {
   LayoutTemplate,
   Plus,
   Sparkles,
-  Upload,
   Video,
 } from "lucide-react";
-import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
 import { AddObjectiveDialog } from "@/components/add-objective-dialog";
 import { toast } from "sonner";
@@ -28,7 +26,14 @@ export const Route = createFileRoute("/academy/admin/modules/create")({
 
 // Removed mock lessonDrafts
 
-const assetDrafts = [
+/**
+ * What kinds of asset this module will want, as guidance only.
+ *
+ * Was `assetDrafts`, feeding three drag-and-drop zones on a screen where no
+ * asset row exists yet, so nothing could have been uploaded. Kept as a list
+ * because the guidance is genuinely useful; the zones are gone.
+ */
+const ASSET_KINDS_PLANNED = [
   {
     title: "Lesson video",
     icon: Video,
@@ -122,9 +127,9 @@ function CreateModulePage() {
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Module builder</p>
             <h1 className="mt-2 text-3xl font-bold text-foreground">Create a new academy module</h1>
             <p className="mt-3 max-w-3xl text-sm text-muted-foreground">
-              UI-only for now. This page is designed to be the admin workflow for defining module
-              structure, naming, learner-facing copy, and media placeholders before the backend
-              upload flow is wired up.
+              Define the module structure, naming, and learner-facing copy. Saving creates a real
+              draft module along with its objectives and lessons; assets and their files are added
+              afterwards from the module editor.
             </p>
           </div>
 
@@ -263,16 +268,28 @@ function CreateModulePage() {
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
                 Upload content
               </p>
-              <div className="mt-5 space-y-3">
-                {assetDrafts.map((asset) => (
-                  <DragAndDropZone
-                    key={asset.title}
-                    title={asset.title}
-                    description={asset.description}
-                    icon={asset.icon}
-                  />
+              {/*
+                Three drop zones used to sit here, driven by a static literal.
+                They could not have worked: a file has to attach to an asset
+                row, and no asset row exists until the module does. Rather than
+                fake the upload, the panel now says where uploads actually
+                happen.
+              */}
+              <p className="mt-2 text-sm text-muted-foreground">
+                Files attach to asset rows, and those exist only once the module does. Create the
+                module first, then add its assets and upload their files from the module editor.
+              </p>
+              <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
+                {ASSET_KINDS_PLANNED.map((kind) => (
+                  <li key={kind.title} className="flex items-start gap-3">
+                    <kind.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>
+                      <span className="font-semibold text-foreground">{kind.title}</span> —{" "}
+                      {kind.description}
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
 
             <div className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary via-primary-deep to-[#173650] p-6 text-primary-foreground shadow-xl">

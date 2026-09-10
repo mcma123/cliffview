@@ -5,10 +5,12 @@ import { toast } from "sonner";
 import type { ModuleAssetKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
+import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { presentAdminAssetDetail } from "@/application/academy/presenters";
+import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { ArrowLeft, Eye, FileText, Headphones, Upload, Video } from "lucide-react";
+import { ArrowLeft, Download, Eye, FileText, Headphones, Video } from "lucide-react";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/assets/$assetId")({
   head: () => ({ meta: [{ title: "Asset Editor · Cliffview Academy" }] }),
@@ -33,6 +35,9 @@ function AdminAssetEditor() {
   const id = detail.asset._id;
   const updateAsset = useMutation({ mutationFn: useConvexMutation(api.assets.update) });
   const setAssetState = useMutation({ mutationFn: useConvexMutation(api.assets.setPublishState) });
+  const detachFile = useMutation({ mutationFn: useConvexMutation(api.assets.detachFile) });
+  const uploads = useAssetUploads();
+  const upload = uploads.stateFor(id);
 
   const [form, setForm] = useState({
     title: data.assetTitle,
@@ -137,7 +142,7 @@ function AdminAssetEditor() {
                   File metadata
                 </span>
                 <input
-                  defaultValue={data.assetMeta}
+                  value={data.assetMeta}
                   readOnly
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
                 />
@@ -186,24 +191,42 @@ function AdminAssetEditor() {
 
           <div className="space-y-6">
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
-              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
-                Placeholder state
-              </p>
-              <div className="mt-5 rounded-2xl border border-dashed border-border bg-background p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gold-soft text-primary-deep">
-                    <Upload className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{data.placeholderState}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      This is the admin-side placeholder upload panel for the final backend flow.
-                    </p>
-                    <button className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                      <Upload className="h-4 w-4" /> Replace placeholder file
-                    </button>
-                  </div>
-                </div>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">File upload</p>
+              <p className="mt-2 text-sm text-muted-foreground">{data.placeholderState}</p>
+              <div className="mt-5">
+                <DragAndDropZone
+                  title={data.hasFile ? "Replace this file" : "Upload the file for this asset"}
+                  description={
+                    data.hasFile
+                      ? data.assetMeta
+                      : "Drag and drop the file here, or click to browse."
+                  }
+                  icon={AssetIcon}
+                  status={upload.status}
+                  progress={upload.progress}
+                  errorMessage={upload.errorMessage}
+                  uploadedFileName={data.fileName}
+                  onUpload={async (file) => {
+                    await uploads.upload(id, file);
+                  }}
+                  onRemove={
+                    data.hasFile
+                      ? async () => {
+                          try {
+                            await detachFile.mutateAsync({ assetId: id });
+                            uploads.reset(id);
+                            toast.success("File removed.");
+                          } catch (caught) {
+                            toast.error(
+                              caught instanceof Error
+                                ? caught.message
+                                : "Could not remove the file.",
+                            );
+                          }
+                        }
+                      : undefined
+                  }
+                />
               </div>
             </section>
 
@@ -229,6 +252,21 @@ function AdminAssetEditor() {
                   <dd className="font-semibold text-foreground">{data.updatedLabel}</dd>
                 </div>
               </dl>
+              {/*
+                A presigned R2 URL, resolved fresh on every read of this query
+                and never stored. It expires, so it is rendered straight into
+                the href and nowhere else.
+              */}
+              {data.fileUrl === null ? null : (
+                <a
+                  href={data.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                >
+                  <Download className="h-4 w-4" /> Download {data.fileName}
+                </a>
+              )}
             </section>
           </div>
         </div>

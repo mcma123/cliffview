@@ -210,11 +210,16 @@ export default defineSchema({
     publishState,
     order: v.number(),
     /**
-     * Storage fields are declared now, while the tables are empty, so Phase 6
-     * needs no schema change against populated data. All optional: seeded
-     * placeholder assets have no file yet.
+     * File storage is Cloudflare R2, reached through the `@convex-dev/r2`
+     * component, so this is an opaque R2 object key and not an `Id<"_storage">`.
+     * Phase 1 guessed the built-in storage and declared `storageId` early to
+     * avoid a schema change here; that guess was wrong, and the rename is what
+     * consent gate G8 actually covered. Every row had the field unset, so no
+     * data moved.
+     *
+     * All optional: a seeded placeholder asset has no file yet.
      */
-    storageId: v.optional(v.id("_storage")),
+    r2Key: v.optional(v.string()),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
     sizeBytes: v.optional(v.number()),
@@ -231,7 +236,12 @@ export default defineSchema({
   })
     .index("by_moduleId_and_order", ["moduleId", "order"])
     .index("by_moduleId_and_kind", ["moduleId", "kind"])
-    .index("by_storageId", ["storageId"]),
+    /**
+     * Reverse lookup by object key. Two assets must never share one blob, or
+     * deleting either would break the other, and `onSyncMetadata` needs to find
+     * the asset a freshly-synced key belongs to.
+     */
+    .index("by_r2Key", ["r2Key"]),
 
   /**
    * Lesson-to-asset join. Replaces the inline documentIds string array, whose
@@ -312,7 +322,9 @@ export default defineSchema({
   aiGenerations: defineTable({
     status: generationStatus,
     sourceFileName: v.optional(v.string()),
-    storageId: v.optional(v.id("_storage")),
+    /** R2 object key, same as `assets.r2Key`. Renamed here in Phase 6 too, so
+     * Phase 7 needs no second schema gate to attach a real source file. */
+    r2Key: v.optional(v.string()),
     moduleId: v.optional(v.id("modules")),
     requestedBy: v.optional(v.string()),
     startedAt: v.number(),

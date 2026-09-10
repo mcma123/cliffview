@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+import actionRetrier from "@convex-dev/action-retrier/test";
+import r2Component from "@convex-dev/r2/test";
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 
@@ -20,6 +22,26 @@ import schema from "./schema";
  */
 
 const modules = import.meta.glob("./**/*.ts");
+
+/**
+ * `convexTest` plus the R2 component.
+ *
+ * Phase 6 added `convex/convex.config.ts` and `app.use(r2)`, so the app now has
+ * a component. Without registering it here every test that reaches storage —
+ * and any mutation that cascades into a blob delete — fails on a missing
+ * component rather than on the thing under test.
+ */
+function newTest() {
+  const t = convexTest(schema, modules);
+  r2Component.register(t);
+  // R2 uses action-retrier internally, so at runtime the nested component is
+  // addressed as "r2/actionRetrier". `r2Component.register` registers it under
+  // the bare name "actionRetrier", which the runtime never looks up, so a
+  // mutation that deletes a blob fails on an unregistered component. Register
+  // it again under the path that is actually used.
+  actionRetrier.register(t, "r2/actionRetrier");
+  return t;
+}
 
 /** Minimal fixture: a phase, an admin, a staff member, and one module. */
 async function seedFixture(t: ReturnType<typeof convexTest>) {
@@ -88,7 +110,7 @@ const asUser = (t: ReturnType<typeof convexTest>, userId: Id<"users">) =>
 
 describe("requireAdmin on content mutations", () => {
   test("no identity is refused", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     await seedFixture(t);
     await expect(
       t.mutation(api.modules.create, { title: "Sneaky", category: "Core Policies" }),
@@ -96,7 +118,7 @@ describe("requireAdmin on content mutations", () => {
   });
 
   test("a staff identity is refused", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { staffId } = await seedFixture(t);
     await expect(
       asUser(t, staffId).mutation(api.modules.create, {
@@ -107,7 +129,7 @@ describe("requireAdmin on content mutations", () => {
   });
 
   test("an inactive admin is refused", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { inactiveAdminId } = await seedFixture(t);
     await expect(
       asUser(t, inactiveAdminId).mutation(api.modules.create, {
@@ -118,7 +140,7 @@ describe("requireAdmin on content mutations", () => {
   });
 
   test("a live session whose profile was deleted is refused", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { moduleId, staffId } = await seedFixture(t);
 
     // A real scenario, not a synthetic one: the staff member was removed while
@@ -134,7 +156,7 @@ describe("requireAdmin on content mutations", () => {
   });
 
   test("an admin succeeds", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { adminId } = await seedFixture(t);
     const created = await asUser(t, adminId).mutation(api.modules.create, {
       title: "Brand New Module",
@@ -146,13 +168,13 @@ describe("requireAdmin on content mutations", () => {
 
 describe("requireAdmin on reads", () => {
   test("the module library refuses an unauthenticated caller", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     await seedFixture(t);
     await expect(t.query(api.modules.listForAdmin, {})).rejects.toThrow(/UNAUTHENTICATED|Sign in/i);
   });
 
   test("the overview refuses a staff caller", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { staffId } = await seedFixture(t);
     await expect(
       asUser(t, staffId).query(api.dashboard.adminOverview, { now: Date.now() }),
@@ -160,7 +182,7 @@ describe("requireAdmin on reads", () => {
   });
 
   test("viewer returns null when unauthenticated rather than throwing", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     await seedFixture(t);
     // The admin gate uses this to decide what to draw; a throw here would be an
     // error screen instead of a sign-in prompt.
@@ -168,7 +190,7 @@ describe("requireAdmin on reads", () => {
   });
 
   test("viewer reports the caller's own role only", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { staffId } = await seedFixture(t);
     const me = await asUser(t, staffId).query(api.auth.viewer, {});
     expect(me).toMatchObject({ isAdmin: false, jobTitle: "Teacher", initials: "SS" });
@@ -177,7 +199,7 @@ describe("requireAdmin on reads", () => {
 
 describe("cross-parent writes are refused", () => {
   test("an asset cannot be attached to a lesson in another module", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { adminId, moduleId } = await seedFixture(t);
     const admin = asUser(t, adminId);
 
@@ -205,7 +227,7 @@ describe("cross-parent writes are refused", () => {
   });
 
   test("a hero asset from another module is refused", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     const { adminId, moduleId } = await seedFixture(t);
     const admin = asUser(t, adminId);
 
@@ -227,7 +249,7 @@ describe("cross-parent writes are refused", () => {
 
 describe("the seed refuses to wipe populated tables", () => {
   test("reset without iAmSure is refused once a module exists", async () => {
-    const t = convexTest(schema, modules);
+    const t = newTest();
     await seedFixture(t);
     await expect(
       t.mutation(internal.seed.run, { confirm: "cliffview", mode: "reset" }),

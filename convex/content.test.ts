@@ -1,4 +1,6 @@
 /// <reference types="vite/client" />
+import actionRetrier from "@convex-dev/action-retrier/test";
+import r2Component from "@convex-dev/r2/test";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, test } from "vitest";
 
@@ -16,12 +18,32 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
+/**
+ * `convexTest` plus the R2 component.
+ *
+ * Phase 6 added `convex/convex.config.ts` and `app.use(r2)`, so the app now has
+ * a component. Without registering it here every test that reaches storage —
+ * and any mutation that cascades into a blob delete — fails on a missing
+ * component rather than on the thing under test.
+ */
+function newTest() {
+  const t = convexTest(schema, modules);
+  r2Component.register(t);
+  // R2 uses action-retrier internally, so at runtime the nested component is
+  // addressed as "r2/actionRetrier". `r2Component.register` registers it under
+  // the bare name "actionRetrier", which the runtime never looks up, so a
+  // mutation that deletes a blob fails on an unregistered component. Register
+  // it again under the path that is actually used.
+  actionRetrier.register(t, "r2/actionRetrier");
+  return t;
+}
+
 let t: ReturnType<typeof convexTest>;
 let admin: ReturnType<ReturnType<typeof convexTest>["withIdentity"]>;
 let moduleId: Id<"modules">;
 
 beforeEach(async () => {
-  t = convexTest(schema, modules);
+  t = newTest();
   const adminId = await t.run(async (ctx) => {
     const phaseId = await ctx.db.insert("phases", { name: "Senior", order: 1, isActive: true });
     return await ctx.db.insert("users", {
@@ -160,7 +182,7 @@ describe("the lesson-asset join", () => {
 
     const detail = await admin.query(api.modules.adminDetail, { slug: "ordering-fixture" });
     const row = detail.lessons.find(({ lesson: l }) => l._id === lesson.lessonId);
-    expect(row?.attachedAssetCount).toBe(0);
+    expect(row?.attachedAssetIds).toEqual([]);
   });
 
   test("attaching is idempotent", async () => {

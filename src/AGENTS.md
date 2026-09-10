@@ -13,6 +13,7 @@ All application source for the Cliffview Academy portal: the four Clean Architec
 ## Local Contracts
 
 - Dependency rule for migrated code: `routes` -> `convex/_generated` (the typed backend API) and `application/academy/presenters` (pure view-model builders). Presenters take data, never a repository
+- One deliberate exception: `hooks/use-asset-upload.ts` also imports `convex/_generated`. A hook is allowed to, a component is not. The line is that anything under `components/` must be renderable from props alone
 - Dependency rule for code still on the container: `routes` -> `infrastructure/academy/container` -> `application/academy/use-cases` -> `domain`. Source dependencies point inward only
 - `domain` imports nothing outside `@/domain`
 - `application` imports domain types and the `AcademyRepository` port, nothing else
@@ -28,7 +29,7 @@ Entry points owned here:
 - `server.ts` — SSR entry override wired via `tanstackStart.server.entry` in `vite.config.ts`. Unwraps h3-swallowed 500s
 - `styles.css` — Tailwind v4 `@theme inline` design system. Every color must be `oklch` and declared as a token in both `:root` and `.dark`; register new tokens as `--color-<name>: var(--<name>)`. Brand tokens: `gold`, `gold-soft`, `primary-deep`, `primary-soft`, `success`. The `.dark` block is still the generic slate/blue default and is not brand-aligned; there is no theme toggle
 - `routeTree.gen.ts` — generated, never edit
-- `hooks/` — `use-mobile.tsx` only (768px breakpoint). No child doc; add one if this becomes a durable boundary
+- `hooks/` — `use-mobile.tsx` (768px breakpoint) and `use-asset-upload.ts`. The latter is the **only Convex-touching module outside `routes/`**: it owns the three-leg upload round trip, which would otherwise be copied into every screen with a drop zone. It is keyed by asset id rather than instantiated per zone, because a screen renders a zone per asset and a hook call inside that map would break the rules of hooks the moment the list changed
 
 ## Work Guidance
 

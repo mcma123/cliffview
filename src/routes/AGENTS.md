@@ -27,7 +27,9 @@ TanStack Start file-based routes for both surfaces: the staff learner portal at 
 - The gate is defence in depth, never the defence itself: every admin query and mutation calls `requireAdmin` server-side
 - `<Link to=...>` is type-checked against the generated route tree. Dynamic targets must use `to="/academy/modules/$moduleSlug"` with `params`, not an interpolated string. Four pre-existing violations in `academy.admin.modules.create.tsx` and `academy.admin.modules.index.tsx` are in the root known-failure baseline — fix them if you touch those files
 - Admin content edits persist. Route components call `useConvexMutation` wrapped in TanStack `useMutation`, and surface the server's message on failure rather than a generic toast — the refusals from `convex/` carry text meant for the admin
-- Drag-and-drop zones are still placeholders until file storage lands; the move controls next to them are real. Keep labels honest about which is which
+- Drag-and-drop zones upload real files as of Phase 6. A route calls `useAssetUploads()` once and passes `stateFor(assetId)` into each zone
+- Zones exist only where an asset row exists. The module create screen has none: a file attaches to an asset, and no asset exists until the module does, so the three zones that used to sit there were unfalsifiable by construction and were deleted rather than faked
+- The lesson hero zone uploads into the lesson's hero asset, and says plainly that none is set when there is none. It used to `toast.success("Hero media updated successfully")` on drop and write nothing at all — the exact failure the rule below exists to prevent
 - Never claim success before the mutation resolves. The old pages toasted "saved" and navigated away without writing anything
 - Known duplication: `academy.modules.social-media-awareness.tsx` and `academy.modules.social-media.{assessment,section-3,complete}.tsx` predate the generic `$moduleSlug` routes and overlap them. Build new work on the generic routes; remove the legacy files only with the user's go-ahead
 

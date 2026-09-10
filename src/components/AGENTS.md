@@ -19,8 +19,11 @@ Shared React components: the two app shells, feature views, admin form dialogs, 
   - The streak pill, notification bell, and `MN` avatar in the shells are hardcoded placeholders, not user data
 - Dialogs (`add-lesson-dialog`, `add-objective-dialog`, `attach-content-dialog`) wrap their own trigger via `children` and take a callback the route supplies. They still import no Convex: the route owns the mutation and passes ids in, which is what keeps them reusable
 - `add-lesson-dialog` offers all five `ModuleLessonKind` values and emits a typed `kind`. `case-study` was missing before, so the kind the seeded scenario lessons use could not be created through the UI
-- `attach-content-dialog` is a picker over the module's existing assets, not an uploader. It previously had no callback at all, and its Cancel and Attach buttons did the same thing
-- `drag-and-drop-zone.tsx` is still visual-only until file storage lands
+- `attach-content-dialog` is a picker over the module's existing assets, not an uploader — uploading is the drop zone's job, and the two are deliberately separate: attaching links an existing asset to a lesson, uploading puts bytes behind an asset. It previously had no callback at all, and its Cancel and Attach buttons did the same thing
+- `drag-and-drop-zone.tsx` uploads real files as of Phase 6, and is **fully controlled**: `status`, `progress`, `errorMessage` and `uploadedFileName` come from the caller, and `onUpload` is awaited. It decides nothing about success on its own. It used to keep its own `uploadedFile` state and print "File ready" the moment a file was picked, before the sync `onUpload` callback had even run — a success message for a file that was never sent
+- It still imports no Convex. The route calls `useAssetUploads` and hands the zone its slice of the state, which is the same split the dialogs use
+- A zone with no `onUpload` is a read-only status card, and renders as one. That is deliberate, not an oversight
+- Its file input is hidden and ref-driven, not an `opacity-0` overlay stretched across the card. The overlay swallowed every click inside the zone, which is why the old "Replace file" button could never be reached
 - Brand marks live only in `cliffview-logo.tsx` (`CliffviewShield`, `CliffviewWordmark`). Do not inline logo SVG anywhere else
 - Style with Tailwind utilities composed through `cn()` from `@/lib/utils`. Use semantic tokens only — `bg-card`, `text-muted-foreground`, `text-gold`, `bg-primary-deep`, `text-success`. No hex, rgb, or arbitrary color values; add a token in `src/styles.css` instead
 - A component that exports non-component values alongside components trips the `react-refresh/only-export-components` warning. Move shared constants to their own module

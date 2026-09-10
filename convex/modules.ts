@@ -9,6 +9,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { MAX_MODULES } from "./lib/counts";
 import { MAX_SIBLINGS } from "./lib/ordering";
+import { deleteBlobIfPresent } from "./lib/storage";
 import schema from "./schema";
 
 /**
@@ -38,13 +39,23 @@ async function moduleBySlugOrThrow(ctx: QueryCtx, slug: string): Promise<Doc<"mo
   return module;
 }
 
-/** Attachment count for one lesson. Bounded: a lesson holds a handful of assets. */
-async function attachedAssetCount(ctx: QueryCtx, lessonId: Id<"lessons">): Promise<number> {
+/**
+ * The assets attached to one lesson. Bounded: a lesson holds a handful.
+ *
+ * Ids rather than a bare count, because the module editor's attach picker has
+ * to know which assets a lesson already has. With only a count it hardcoded
+ * `alreadyAttached: false` and offered every asset, including the attached
+ * ones. The count is `.length`.
+ */
+async function attachedAssetIds(
+  ctx: QueryCtx,
+  lessonId: Id<"lessons">,
+): Promise<Array<Id<"assets">>> {
   const links = await ctx.db
     .query("lessonAssets")
     .withIndex("by_lessonId_and_order", (q) => q.eq("lessonId", lessonId))
     .take(MAX_SIBLINGS);
-  return links.length;
+  return links.map((link) => link.assetId);
 }
 
 /**
@@ -99,7 +110,7 @@ export const adminDetail = query({
     lessons: v.array(
       v.object({
         lesson: schema.doc("lessons"),
-        attachedAssetCount: v.number(),
+        attachedAssetIds: v.array(v.id("assets")),
       }),
     ),
     assets: v.array(schema.doc("assets")),
@@ -121,7 +132,7 @@ export const adminDetail = query({
 
     const lessons = [];
     for (const lesson of lessonDocs) {
-      lessons.push({ lesson, attachedAssetCount: await attachedAssetCount(ctx, lesson._id) });
+      lessons.push({ lesson, attachedAssetIds: await attachedAssetIds(ctx, lesson._id) });
     }
 
     const assets = await ctx.db
@@ -442,7 +453,12 @@ export const remove = mutation({
       .query("assets")
       .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
       .take(MAX_SIBLINGS);
-    for (const asset of assets) await ctx.db.delete("assets", asset._id);
+    // Blob before row: an asset row deleted on its own leaves an object in the
+    // R2 bucket that nothing can ever reach or name again.
+    for (const asset of assets) {
+      await deleteBlobIfPresent(ctx, asset.r2Key);
+      await ctx.db.delete("assets", asset._id);
+    }
 
     const objectives = await ctx.db
       .query("moduleObjectives")

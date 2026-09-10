@@ -17,6 +17,7 @@ import type * as lib_audit from "../lib/audit.js";
 import type * as lib_authz from "../lib/authz.js";
 import type * as lib_counts from "../lib/counts.js";
 import type * as lib_ordering from "../lib/ordering.js";
+import type * as lib_storage from "../lib/storage.js";
 import type * as lib_time from "../lib/time.js";
 import type * as modules from "../modules.js";
 import type * as objectives from "../objectives.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "lib/authz": typeof lib_authz;
   "lib/counts": typeof lib_counts;
   "lib/ordering": typeof lib_ordering;
+  "lib/storage": typeof lib_storage;
   "lib/time": typeof lib_time;
   modules: typeof modules;
   objectives: typeof objectives;
@@ -74,4 +76,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
+};

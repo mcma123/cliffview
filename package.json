@@ -22,6 +22,7 @@
   "dependencies": {
     "@auth/core": "^0.41.3",
     "@convex-dev/auth": "^0.0.95",
+    "@convex-dev/r2": "^0.10.2",
     "@convex-dev/react-query": "^0.1.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -79,6 +80,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@convex-dev/action-retrier": "0.3.1",
     "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^2.3.2",

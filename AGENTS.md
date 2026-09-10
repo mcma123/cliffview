@@ -81,8 +81,9 @@ Cliffview Academy Hub — staff training and compliance portal for Cliffview Pri
 
 - Stack: TanStack Start (SSR, file-based routing), React 19, Tailwind v4, shadcn/ui on Radix, TanStack Query, Zod
 - Build: Vite via `@lovable.dev/vite-tanstack-config`; Nitro output preset is `vercel` when `VERCEL` is set, otherwise `node-server`
-- Backend: Convex (`convex@^1.45.0`), live on the **production** deployment `diligent-mink-756` with 18 tables seeded and the admin content reads wired into the React app. See `convex/AGENTS.md` for the deployment and consent contract, `ADMIN_BACKEND.md` for the build phases
+- Backend: Convex (`convex@^1.45.0`), live on the **production** deployment `diligent-mink-756` with 18 tables seeded and the admin content reads wired into the React app. File storage is **Cloudflare R2** via the `@convex-dev/r2` component, so `convex/convex.config.ts` exists and `npx convex codegen` now contacts the deployment to analyse components. See `convex/AGENTS.md` for the deployment and consent contract, `ADMIN_BACKEND.md` for the build phases
 - Auth is live: Convex Auth (email + password) gates the admin console, and every admin query and mutation calls `requireAdmin`. Sign-in is real, and admin content edits persist. Admin screens read from Convex and are client-rendered behind the gate; staff, AI review and all learner routes still read the in-memory seed in `src/infrastructure/academy/in-memory-academy-repository.ts`, which is deleted at Phase 8
+- Uploads move real bytes as of Phase 6. Admin drop zones upload to R2, show real progress, and report failure; download links are short-lived presigned URLs resolved per read and never stored. `src/hooks/use-asset-upload.ts` is the only Convex-touching module outside `src/routes/`
 - Architecture is Clean Architecture; the dependency rule is enforced by convention, documented in `src/AGENTS.md`. Reference material: `clean-architecture-expert/SKILL.md`
 
 ## Repo-Wide Rules
@@ -110,6 +111,7 @@ Run from the repo root:
 
 Known baseline, pre-existing and not caused by new work:
 
+- `bunfig.toml`'s 24h `minimumReleaseAge` supply-chain guard is **not in force with the bun installed here** (1.0.35; the option landed in bun 1.2). That bun also cannot write the tracked text-format `bun.lock` — it emits a binary `bun.lockb` instead and leaves `bun.lock` stale. After any `bun add`, delete `bun.lockb`, run `npm install --package-lock-only`, and re-run `bun install` from a bun >= 1.2 to resync `bun.lock`
 - `npm run typecheck` and `npm run typecheck:convex` are both **clean**, and `npm test` passes. The old 4-error `<Link to>` baseline is gone as of Phase 5, so **any** error now is new work and must be fixed rather than counted
 - `npm run lint` is **clean** (0 errors). It reports 6 `react-refresh/only-export-components` warnings from files that export a constant alongside a component; these are warnings, not errors
 - `.prettierrc` sets `"endOfLine": "auto"` so Prettier preserves this Windows checkout's CRLF endings instead of reporting every line as an error
@@ -129,7 +131,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - `src/AGENTS.md` — all application source: layer boundaries, the Clean Architecture dependency rule, app entry points, design tokens, and the layer child docs
 - `convex/AGENTS.md` — Convex backend: the production-target contract, prod consent rules, CLI workflow, and codegen boundaries
 
-Owned by root, no child doc: `package.json`, `vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `.prettierrc`, `.prettierignore`, `bunfig.toml`, `components.json`, `MODULE_UI_PHASES.md`, `ADMIN_BACKEND.md`, `public/`, `clean-architecture-expert/`
+Owned by root, no child doc: `package.json`, `vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `.prettierrc`, `.prettierignore`, `bunfig.toml`, `components.json`, `.mcp.json`, `MODULE_UI_PHASES.md`, `ADMIN_BACKEND.md`, `public/`, `clean-architecture-expert/`
 
 <!-- convex-ai-start -->
 

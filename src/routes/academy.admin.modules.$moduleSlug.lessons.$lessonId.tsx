@@ -4,11 +4,12 @@ import { useState } from "react";
 import type { ModuleLessonKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
-import { presentAdminLessonDetail } from "@/application/academy/presenters";
+import { formatAssetMeta, presentAdminLessonDetail } from "@/application/academy/presenters";
 import { api } from "../../convex/_generated/api";
 import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video, Save } from "lucide-react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
+import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons/$lessonId")({
@@ -33,6 +34,14 @@ function AdminLessonEditor() {
   });
   const detachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.detachAsset) });
   const attachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.attachAsset) });
+  // One instance for the screen, keyed by asset id: this page renders a zone
+  // per attached resource, so a hook call per zone would break the rules of
+  // hooks as soon as a resource was attached or detached.
+  const uploads = useAssetUploads();
+
+  // Bound once so the upload callback closes over a narrowed, non-null value
+  // instead of re-narrowing `data.heroAsset` inside the JSX.
+  const hero = data.heroAsset;
 
   // Every asset on the module, flagged with whether this lesson already has it,
   // so the picker can hide the ones that are attached.
@@ -41,7 +50,9 @@ function AdminLessonEditor() {
     id: asset._id,
     title: asset.title,
     kind: asset.kind,
-    meta: asset.metaNote ?? "No file attached",
+    // Derived, like every other surface. Reading raw `metaNote` here meant the
+    // picker described an asset differently from the card next to it.
+    meta: formatAssetMeta(asset),
     alreadyAttached: attachedIds.has(asset._id),
   }));
 
@@ -245,19 +256,43 @@ function AdminLessonEditor() {
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Hero media</p>
               <div className="mt-5">
-                <DragAndDropZone
-                  title={data.heroTitle ?? "No hero media set"}
-                  description={
-                    data.heroDescription ?? "Attach an asset to use as this lesson hero."
-                  }
-                  icon={data.kind === "audio" ? Headphones : Video}
-                  onUpload={() => toast.success("Hero media updated successfully")}
-                />
+                {/*
+                  This zone used to toast "Hero media updated successfully" on
+                  drop and write nothing at all. It now uploads into the lesson
+                  hero asset, and when there is no hero asset it says so instead
+                  of pretending a file could go somewhere.
+                */}
+                {hero === null ? (
+                  <div className="rounded-2xl border-2 border-dashed border-border bg-background p-6 text-center">
+                    <p className="text-sm font-semibold text-foreground">No hero media set</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Attach an asset to this lesson and set it as the module hero before uploading
+                      hero media.
+                    </p>
+                  </div>
+                ) : (
+                  <DragAndDropZone
+                    title={hero.hasFile ? "Replace the hero file" : "Upload the hero file"}
+                    description={data.heroDescription ?? hero.meta}
+                    icon={data.kind === "audio" ? Headphones : Video}
+                    status={uploads.stateFor(hero.id).status}
+                    progress={uploads.stateFor(hero.id).progress}
+                    errorMessage={uploads.stateFor(hero.id).errorMessage}
+                    uploadedFileName={hero.fileName}
+                    onUpload={async (file) => {
+                      await uploads.upload(hero.id, file);
+                    }}
+                  />
+                )}
               </div>
             </section>
 
             <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
               <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Upload zones</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                One zone per resource attached to this lesson. Dropping a file here replaces that
+                resource&apos;s file.
+              </p>
               <div className="mt-5 space-y-3">
                 {data.linkedResources.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
@@ -270,6 +305,13 @@ function AdminLessonEditor() {
                       title={asset.title}
                       description={`${asset.kind} - ${asset.meta}`}
                       icon={Upload}
+                      status={uploads.stateFor(asset.id).status}
+                      progress={uploads.stateFor(asset.id).progress}
+                      errorMessage={uploads.stateFor(asset.id).errorMessage}
+                      uploadedFileName={asset.fileName}
+                      onUpload={async (file) => {
+                        await uploads.upload(asset.id, file);
+                      }}
                     />
                   ))
                 )}

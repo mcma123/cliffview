@@ -84,7 +84,6 @@ export function formatAssetMeta(asset: {
   pageCount?: number;
   durationSeconds?: number;
   metaNote?: string;
-  fileName?: string;
 }): string {
   const parts: string[] = [];
   if (asset.contentType !== undefined) {
@@ -265,9 +264,11 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
             kind: featuredAsset.kind,
             description: featuredAsset.description,
             meta: formatAssetMeta(featuredAsset),
+            hasFile: featuredAsset.r2Key !== undefined,
+            fileName: featuredAsset.fileName ?? null,
             href: getAdminAssetHref(module.slug, featuredAsset._id),
           },
-    lessons: lessons.map(({ lesson, attachedAssetCount }) => ({
+    lessons: lessons.map(({ lesson, attachedAssetIds }) => ({
       id: lesson._id,
       slug: lesson.slug,
       order: lesson.order,
@@ -277,7 +278,8 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
       durationLabel: formatLessonDuration(lesson.kind, lesson.durationMinutes),
       // A real count now. The old join returned every non-video asset when a
       // lesson had nothing attached, so a new lesson claimed three.
-      attachedAssets: attachedAssetCount,
+      attachedAssets: attachedAssetIds.length,
+      attachedAssetIds,
       publishState: lesson.publishState,
       publishLabel: formatPublishState(lesson.publishState),
       href: getAdminLessonHref(module.slug, lesson.slug),
@@ -290,7 +292,8 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
       meta: formatAssetMeta(asset),
       publishState: asset.publishState,
       publishLabel: formatPublishState(asset.publishState),
-      hasFile: asset.storageId !== undefined,
+      hasFile: asset.r2Key !== undefined,
+      fileName: asset.fileName ?? null,
       href: getAdminAssetHref(module.slug, asset._id),
     })),
   };
@@ -327,6 +330,8 @@ export function presentAdminLessonDetail(data: LessonDetail) {
             title: heroAsset.title,
             kind: heroAsset.kind,
             meta: formatAssetMeta(heroAsset),
+            hasFile: heroAsset.r2Key !== undefined,
+            fileName: heroAsset.fileName ?? null,
             href: getAdminAssetHref(module.slug, heroAsset._id),
           },
     linkedResources: linkedAssets.map((asset) => ({
@@ -334,6 +339,8 @@ export function presentAdminLessonDetail(data: LessonDetail) {
       title: asset.title,
       kind: asset.kind,
       meta: formatAssetMeta(asset),
+      hasFile: asset.r2Key !== undefined,
+      fileName: asset.fileName ?? null,
       publishState: asset.publishState,
       publishLabel: formatPublishState(asset.publishState),
       // The lesson editor could not open its own resources before: the old
@@ -357,11 +364,16 @@ export function presentAdminAssetDetail(data: AssetDetail, now: number) {
     publishState: asset.publishState,
     publishLabel: formatPublishState(asset.publishState),
     isFeatured,
-    hasFile: asset.storageId !== undefined,
+    hasFile: asset.r2Key !== undefined,
     fileName: asset.fileName ?? null,
+    /**
+     * Presigned and short-lived. Rendered straight into an href and never
+     * stored anywhere — it is a credential, not an address.
+     */
+    fileUrl: data.fileUrl,
     updatedLabel: formatUpdatedLabel(asset.contentUpdatedAt, now),
     placeholderState:
-      asset.storageId !== undefined
+      asset.r2Key !== undefined
         ? "File attached and ready for learner-side display"
         : asset.publishState === "published"
           ? "Published, but no file is attached yet"

@@ -63,18 +63,33 @@ Mutations:
 - Note the ordering: Convex validates `args` _before_ the handler runs, so a malformed call fails validation without ever reaching the authz check. That is safe (nothing executes) but it means a validation error is not evidence that the gate works — test the gate with valid args
 - `modules.publish` is the only way to publish a module, and it checks readiness: non-empty title, description, audience and outcome, a pass mark in range, and at least one published lesson. `setPublishState` deliberately refuses to publish so it cannot be used as a way around the gate
 - Deletion is narrow on purpose. `modules.remove` refuses once anyone is enrolled — that is what `archived` is for — and otherwise cascades to lessons, their join rows, assets and objectives. `assets.remove` clears all three kinds of reference to the asset: join rows, any lesson using it as hero media, and the module hero pointer
+- **Every path that drops an asset row deletes its blob first**, through `deleteBlobIfPresent` in `convex/lib/storage.ts`. A row deleted on its own leaves an object in the bucket that nothing can reach or name again — unreferenced, unlistable from the app, and still billed. That covers `assets.remove`, the `modules.remove` cascade, `assets.detachFile`, and replacement inside `assets.attachFile`
 - Ordering stays a dense 1..N. Inserts append via `nextXOrder`, deletes call `renumberX`, `lessons.move` swaps two adjacent rows in one transaction, and `reorder` validates the id set against the authoritative siblings with `assertSameMembers` so a stale client fails loudly instead of dropping a row
 - Slug uniqueness is a mutation invariant, since Convex has no unique constraint: modules probe `by_slug` globally, lessons probe `by_moduleId_and_slug` **within their module only** — lesson slugs are deliberately not globally unique
 - Cross-parent writes are refused: an asset can only be attached to a lesson in its own module, and a module hero must belong to that module
 
+File storage:
+
+- Files live in **Cloudflare R2**, not Convex's built-in storage. `assets.r2Key` and `aiGenerations.r2Key` are opaque object keys — plain strings, not `Id<"_storage">`. Phase 1 guessed built-in storage and declared `storageId: v.id("_storage")` early to avoid a schema change; the rename to `r2Key` in Phase 6 is what consent gate G8 actually covered
+- One `R2` instance for the whole backend, in `convex/lib/storage.ts`. `modules.remove` cascades into blobs, so a second `new R2(...)` would be a second place to keep configured
+- The upload is three legs: `assets.generateUploadUrl` (admin-gated, returns a server-issued uuid key), a direct browser `PUT` to R2 that never passes through Convex, then `assets.attachFile` to point the row at the key. Between leg two and leg three the object is an orphan, which is why a failed `attachFile` is surfaced rather than swallowed
+- The key is **always server-issued**. `clientApi`'s `generateUploadUrl` takes no arguments, so a caller cannot name a key and therefore cannot aim an upload at another asset's blob. `attachFile` additionally refuses a key already held by a different asset, via `by_r2Key`: two assets sharing one blob would mean deleting either breaks the other
+- `contentType` and `sizeBytes` reaching `attachFile` are the **browser's report**, treated as a first guess so the editor shows a correct size immediately. `assets.applySyncedMetadata` overwrites both with what R2 reports. It has to work this way: the client-facing `syncMetadata` is a mutation that only _schedules_ R2's HEAD request, so `r2.getMetadata` is still empty while the upload is being recorded
+- **The bucket's CORS policy is part of the deploy, not a nicety.** The browser PUTs straight to R2, so an origin missing from the policy fails with an opaque network error and nothing appears in the Convex logs. Allowed origins are currently the localhost dev ports only (8080, 8081, 5173, 3000) — the dev server takes 8081 when 8080 is occupied, which is why `SITE_URL` is 8081. **When the frontend deploys, add its origin or every upload breaks.** Read the policy back with `GET /accounts/<id>/r2/buckets/<bucket>/cors`
+- The bucket is **`cliffview`**, not the `cliffview-academy-assets` the Phase 6 plan named: a bucket already existed when the credentials were made, and a second one would have split the same project's files across two buckets
+- The size cap lives in `convex/lib/storage.ts` and is duplicated in `src/hooks/use-asset-upload.ts`. A presigned PUT cannot be size-capped, so the browser check only saves a doomed round trip and the refusal that counts happens after the bytes land. Change both together
+- Replacing a file clears `pageCount` and `durationSeconds`. Nothing recomputes them, so a new file would otherwise be described with the old file's numbers
+
 Function surface:
 
 - Public queries, all `requireAdmin` except `auth.viewer`: `modules.listForAdmin`, `modules.adminDetail`, `lessons.adminDetail`, `assets.adminDetail`, `dashboard.adminOverview`
-- Public mutations, all `requireAdmin`: `modules.{create,update,publish,setPublishState,remove}`, `objectives.{add,update,remove,reorder}`, `lessons.{create,update,setPublishState,move,reorder,remove,attachAsset,detachAsset}`, `assets.{create,update,setPublishState,remove}`
+- Public mutations, all `requireAdmin`: `modules.{create,update,publish,setPublishState,remove}`, `objectives.{add,update,remove,reorder}`, `lessons.{create,update,setPublishState,move,reorder,remove,attachAsset,detachAsset}`, `assets.{create,update,setPublishState,remove,attachFile,detachFile}`, and `assets.{generateUploadUrl,syncMetadata}` generated by the R2 component's `clientApi`
+- `assets.generateUploadUrl` is gated through the component's `checkUpload` callback rather than a handler body, which is the one place `requireAdmin` is not the first line of a mutation we wrote. It still runs before anything else. An ungated upload-URL mutation lets anyone fill the bucket, so this gate is load-bearing
 - `auth.viewer` is public and ungated by design: it returns the caller's own name, role and job title, or null when unauthenticated, because the admin gate calls it to decide what to draw
 - Public actions owned by Convex Auth: `auth.signIn`, `auth.signOut`, plus `auth.isAuthenticated`
-- Internal: `auth.allowAdminClaim`, `auth.claimStatus`, `auth.store`, `seed.run`
-- Helpers in `convex/lib/`: `authz.ts` (`getActor`, `requireStaff`, `requireAdmin`), `ordering.ts`, `audit.ts`, `counts.ts`, `time.ts`
+- Internal: `auth.allowAdminClaim`, `auth.claimStatus`, `auth.store`, `seed.run`, `assets.applySyncedMetadata`, `assets.onSyncMetadata`
+- `assets.applySyncedMetadata` is the only mutation without a `requireAdmin` call, and deliberately: it is an `internalMutation` the R2 component invokes with no end-user identity attached, and it is unreachable from a client. It also does not `stamp()` — a background metadata correction must not move `contentUpdatedAt` and make "Last edited" jump
+- Helpers in `convex/lib/`: `authz.ts` (`getActor`, `requireStaff`, `requireAdmin`), `ordering.ts`, `audit.ts`, `counts.ts`, `time.ts`, `storage.ts` (the single R2 client, the URL TTL, the size cap, `deleteBlobIfPresent`)
 - Shared validators in `convex/validators.ts`, mirroring the unions in `src/domain/academy/entities.ts`
 
 Authentication and authorization:
@@ -88,8 +103,8 @@ Authentication and authorization:
 - Every admin query calls `requireAdmin` first. The four content queries are admin-gated rather than staff-gated because they expose draft and archived content; learner-facing content queries arrive in Phase 8 and will filter on `publishState` instead
 - `auth.viewer` returns null rather than throwing when unauthenticated, because the UI gate uses it to decide what to draw. It exposes only the caller's own name, initials, job title and role
 - Every mutation calls `requireAdmin` first, from its first commit
-- No file download URL is served from a public query. `ctx.storage.getUrl` in a query keyed by a client-supplied id would hand a signed link to any caller who can guess a module slug; serving lands in Phase 6 with the privacy decision
-- Prod environment variables: `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL`. Generate the keys **headlessly** with `jose` — the interactive `npx @convex-dev/auth` wizard needs a TTY and hangs in a non-interactive session — and set them with the `NAME=VALUE` form (`npx convex env set "JWT_PRIVATE_KEY=$JWT"`), never `env set NAME "$VAL"`, because the key starts with `-----BEGIN` and the CLI reads the leading dash as a flag. `SITE_URL` is currently `http://localhost:8081` and **must be repointed at the deployed origin** when the frontend ships
+- A signed download URL may leave a query only if that query is `requireAdmin`-gated, and it is **never written to a row**. It is an expiring credential, not an address. `assets.adminDetail` resolves one per read via `r2.getUrl`; the earlier blanket ban existed because nothing was gated yet
+- Prod environment variables: `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL`, plus the five R2 credentials (`R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_TOKEN`). No R2 value may ever be given a `VITE_` name — that would ship the secret in the browser bundle. Generate the keys **headlessly** with `jose` — the interactive `npx @convex-dev/auth` wizard needs a TTY and hangs in a non-interactive session — and set them with the `NAME=VALUE` form (`npx convex env set "JWT_PRIVATE_KEY=$JWT"`), never `env set NAME "$VAL"`, because the key starts with `-----BEGIN` and the CLI reads the leading dash as a flag. `SITE_URL` is currently `http://localhost:8081` and **must be repointed at the deployed origin** when the frontend ships
 
 Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):
 
@@ -103,10 +118,11 @@ Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):
 
 Current state:
 
-- The React app does not import Convex anywhere. Every route still renders from `src/infrastructure/academy/container.ts`
+- The admin content and overview routes import `api` directly. Still on `src/infrastructure/academy/container.ts`: staff and AI review (Phase 7), and every learner route (Phase 8)
 - Prod holds seeded data: 5 phases, 4 users, 9 modules, 44 lessons, 36 assets, 55 lesson-asset links, 20 enrollments, 2 AI questions, 6 monthly rollups
 - `lessonProgress`, `assessmentAttempts`, `progressEvents`, `aiGenerations`, `aiReviewDecisions` and `auditLog` are intentionally empty until the phases that write them
-- No `convex/convex.config.ts`, and none is needed: Convex Auth is a library rather than a component. Add one only when a real `@convex-dev/*` component or a typed env var is introduced
+- `convex/convex.config.ts` exists as of Phase 6 and registers exactly one component, `@convex-dev/r2`. Phases 1 and 4 recorded that no such file was needed, which was true of Convex Auth (a library, spread in via `...authTables`) and false of R2. Declaring it switches codegen into component mode, so `npx convex codegen` now contacts the deployment to analyse components and cannot run fully offline — that is an analysis round trip, not a deploy
+- R2 pulls in `@convex-dev/action-retrier` as a nested component and registers it itself. Do not add it to `convex.config.ts`
 
 ## Work Guidance
 
@@ -118,8 +134,8 @@ Current state:
 
 - `npm test` runs the `convex-test` suites in `convex/*.test.ts`. This is the substitute for a dev deployment: authorization is the thing that cannot be verified by clicking, so **every mutation ships with the four authz negatives** — no identity, a staff identity, an inactive account, and a cross-parent write. Run it before asking for consent to push, not after
 - In tests, `t.withIdentity({ subject: userId })` is enough: `getAuthUserId` splits the subject on `"|"` and takes the first part
-- `npm test` runs the `convex-test` suites in `convex/*.test.ts`. This is the substitute for a dev deployment: authorization is the thing that cannot be verified by clicking, so **every mutation ships with the four authz negatives** — no identity, a staff identity, an inactive account, and a cross-parent write. Run it before asking for consent to push, not after
-- In tests, `t.withIdentity({ subject: userId })` is enough: `getAuthUserId` splits the subject on `"|"` and takes the first part
+- Component tests need both components registered by hand. Each test file has a local `newTest()` that calls `r2Component.register(t)` **and** `actionRetrier.register(t, "r2/actionRetrier")`. The second call is not redundant: R2's own helper registers the retrier under the bare name `actionRetrier`, but at runtime it is addressed by its nested path, so without it any mutation that deletes a blob fails on an unregistered component
+- R2 credentials for tests are fake values in `vitest.config.ts`, set via `test.env` because the component reads `process.env` in its constructor, before any test body runs. Presigning is local HMAC work, so `generateUploadUrl` and `getUrl` are fully testable offline. `deleteObject` only enqueues a scheduled action, so never call `finishInProgressScheduledFunctions` in a storage test unless you intend a real R2 call
 - Confirm the live target: `npx convex env list` names the deployment it reached — expect `on prod deployment diligent-mink-756`
 - Typecheck this folder with `npm run typecheck:convex` (`tsc --noEmit -p convex`) — zero production contact. `convex/tsconfig.json` holds the convex@1.45 CLI template shape: `target: ESNext`, `lib: [ES2023, dom]`, `module: ESNext`, and `exclude: ["./_generated"]`. The root `tsconfig.json` still covers only `src/`, so `npm run typecheck` does **not** check this code — run both
 - Always typecheck before asking for consent to push. Do not rely on `npx convex dev --prod --typecheck enable`, which finds type errors only by pushing to production

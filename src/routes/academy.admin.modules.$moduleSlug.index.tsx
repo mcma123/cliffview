@@ -20,6 +20,7 @@ import {
   Video,
 } from "lucide-react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
+import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
 import { AddObjectiveDialog } from "@/components/add-objective-dialog";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
@@ -53,16 +54,29 @@ function AdminModuleDetail() {
   const createLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.create) });
   const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
   const attachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.attachAsset) });
+  // One instance for the screen, keyed by asset id, because this page renders a
+  // zone per asset and a hook call per zone would break the rules of hooks the
+  // moment an asset was added or removed.
+  const uploads = useAssetUploads();
 
-  // The picker needs the module assets in its own shape. Building it here keeps
-  // the dialog prop-driven and free of any Convex import.
-  const attachable = data.resources.map((asset) => ({
-    id: asset.id,
-    title: asset.title,
-    kind: asset.kind,
-    meta: asset.meta,
-    alreadyAttached: false,
-  }));
+  /**
+   * The module's assets in the picker's shape, for one lesson.
+   *
+   * Per-lesson because `alreadyAttached` is: this used to be a single list with
+   * `alreadyAttached` hardcoded to `false`, so the picker offered assets the
+   * lesson already had and attaching one silently did nothing. Building it here
+   * keeps the dialog prop-driven and free of any Convex import.
+   */
+  const attachableFor = (attachedAssetIds: ReadonlyArray<string>) => {
+    const attached = new Set(attachedAssetIds);
+    return data.resources.map((asset) => ({
+      id: asset.id,
+      title: asset.title,
+      kind: asset.kind,
+      meta: asset.meta,
+      alreadyAttached: attached.has(asset.id),
+    }));
+  };
 
   // Copy edits are collected here and saved together, so one Save covers the
   // whole block rather than firing a mutation per keystroke.
@@ -296,9 +310,20 @@ function AdminModuleDetail() {
                     <p className="mt-3 text-sm text-muted-foreground">
                       {data.featuredMedia?.description}
                     </p>
-                    <button className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted">
-                      <Upload className="h-4 w-4" /> Replace placeholder
-                    </button>
+                    {/*
+                      Was a button with no onClick. The hero asset is a real
+                      asset row, so its file is uploaded through its own editor
+                      rather than through a second, separate upload path here.
+                    */}
+                    {data.featuredMedia === null ? null : (
+                      <Link
+                        to={data.featuredMedia.href}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                      >
+                        <Upload className="h-4 w-4" />
+                        {data.featuredMedia.hasFile ? "Replace file" : "Upload file"}
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
@@ -309,18 +334,31 @@ function AdminModuleDetail() {
                 Asset placeholders
               </p>
               <p className="mt-2 text-sm text-muted-foreground">
-                One zone per real asset on this module. Uploading is wired in a later phase, so
-                these report the current file state rather than accepting a file.
+                One zone per real asset on this module. Dropping a file uploads it and attaches it
+                to that asset, replacing any file already there.
               </p>
               <div className="mt-5 space-y-3">
-                {data.resources.map((asset) => (
-                  <DragAndDropZone
-                    key={asset.id}
-                    title={asset.title}
-                    description={`${asset.kind} - ${asset.hasFile ? asset.meta : "No file attached"}`}
-                    icon={Upload}
-                  />
-                ))}
+                {data.resources.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No assets on this module yet. Add a placeholder below, then upload its file.
+                  </p>
+                ) : (
+                  data.resources.map((asset) => (
+                    <DragAndDropZone
+                      key={asset.id}
+                      title={asset.title}
+                      description={`${asset.kind} - ${asset.meta}`}
+                      icon={Upload}
+                      status={uploads.stateFor(asset.id).status}
+                      progress={uploads.stateFor(asset.id).progress}
+                      errorMessage={uploads.stateFor(asset.id).errorMessage}
+                      uploadedFileName={asset.fileName}
+                      onUpload={async (file) => {
+                        await uploads.upload(asset.id, file);
+                      }}
+                    />
+                  ))
+                )}
               </div>
             </div>
           </section>
@@ -491,7 +529,7 @@ function AdminModuleDetail() {
                         </Link>
                         <AttachContentDialog
                           lessonTitle={lesson.title}
-                          assets={attachable}
+                          assets={attachableFor(lesson.attachedAssetIds)}
                           onAttach={(assetId) =>
                             run("Resource attached.", () =>
                               attachAsset.mutateAsync({
