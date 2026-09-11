@@ -602,3 +602,168 @@ export function presentAdminStaffDetail(data: StaffDetail, now: number) {
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Learner
+// ---------------------------------------------------------------------------
+
+type LearnerModules = FunctionReturnType<typeof api.learn.myModules>;
+type LearnerModuleDetail = FunctionReturnType<typeof api.learn.moduleDetail>;
+type LearnerLesson = FunctionReturnType<typeof api.learn.lesson>;
+
+const LESSON_PROGRESS_LABELS: Record<string, string> = {
+  not_started: "Not started",
+  in_progress: "In progress",
+  completed: "Completed",
+};
+
+/**
+ * The learner's own modules, for the dashboard and the library.
+ *
+ * Deliberately no notion of "locked": the old seed stored a `ModuleStatus`
+ * union that conflated entitlement with progress. Entitlement is now the
+ * enrollment row — if it is not assigned, it is not in this list at all.
+ */
+export function presentLearnerModules(data: LearnerModules, now: number) {
+  const rows = data.modules.map(({ enrollment, module, lessonCount, completedLessons }) => ({
+    id: module._id,
+    slug: module.slug,
+    number: module.number,
+    title: module.title,
+    description: module.description,
+    category: module.category,
+    durationMinutes: module.durationMinutes,
+    cptdPoints: module.cptdPoints,
+    status: enrollment.status,
+    statusLabel: ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status,
+    progressPercent: enrollment.progressPercent,
+    lessonCount,
+    completedLessons,
+    lessonsLabel:
+      lessonCount === 0 ? "No lessons yet" : `${completedLessons} of ${lessonCount} lessons`,
+    dueLabel:
+      enrollment.dueAt === undefined
+        ? null
+        : enrollment.dueAt < now
+          ? "Overdue"
+          : `Due ${formatRelativeTime(enrollment.dueAt, now).replace(" ago", " from now")}`,
+    lastAccessedLabel:
+      enrollment.lastAccessedAt === undefined
+        ? "Not opened yet"
+        : formatRelativeTime(enrollment.lastAccessedAt, now),
+    href: getModulePreviewHref(module.slug),
+  }));
+
+  const completed = rows.filter((row) => row.status === "completed").length;
+  const inProgress = rows.filter((row) => row.status === "in_progress").length;
+
+  return {
+    greetingName: data.user.preferredName ?? data.user.firstName,
+    jobTitle: data.user.jobTitle,
+    stats: [
+      { label: "Modules assigned", value: `${rows.length}` },
+      { label: "Completed", value: `${completed}` },
+      { label: "In progress", value: `${inProgress}` },
+      { label: "CPTD points", value: `${data.user.cptdPoints}` },
+    ],
+    compliancePercent: data.user.compliancePercent,
+    xpTotal: data.user.xpTotal,
+    modules: rows,
+    /** The first thing not yet finished — what the dashboard should point at. */
+    nextUp: rows.find((row) => row.status !== "completed") ?? null,
+  };
+}
+
+/** One assigned module, including its featured media. */
+export function presentLearnerModuleDetail(data: LearnerModuleDetail, now: number) {
+  const { module, enrollment, featured } = data;
+
+  return {
+    slug: module.slug,
+    number: module.number,
+    title: module.title,
+    description: module.description,
+    audience: module.audience,
+    outcome: module.outcome,
+    category: module.category,
+    durationMinutes: module.durationMinutes,
+    cptdPoints: module.cptdPoints,
+    passMark: module.passMark,
+    format: module.format,
+    statusLabel: ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status,
+    progressPercent: enrollment.progressPercent,
+    lastAccessedLabel:
+      enrollment.lastAccessedAt === undefined
+        ? "Not opened yet"
+        : formatRelativeTime(enrollment.lastAccessedAt, now),
+    objectives: data.objectives.map((objective) => ({
+      id: objective._id,
+      text: objective.text,
+    })),
+    /**
+     * The module hero. `url` is a short-lived signed R2 link resolved per read
+     * — never stored, and it expires, so it must not be cached anywhere that
+     * outlives the page.
+     */
+    featured:
+      featured === null
+        ? null
+        : {
+            title: featured.asset.title,
+            description: featured.asset.description,
+            kind: featured.asset.kind,
+            contentType: featured.asset.contentType ?? null,
+            fileName: featured.asset.fileName ?? null,
+            url: featured.url,
+            meta: formatAssetMeta(featured.asset),
+          },
+    lessons: data.lessons.map(({ lesson, status, assetCount }) => ({
+      id: lesson._id,
+      slug: lesson.slug,
+      title: lesson.title,
+      summary: lesson.summary,
+      kind: lesson.kind,
+      order: lesson.order,
+      status,
+      statusLabel: LESSON_PROGRESS_LABELS[status] ?? status,
+      durationLabel: formatLessonDuration(lesson.kind, lesson.durationMinutes),
+      assetCount,
+      href: getLessonPreviewHref(module.slug, lesson.slug),
+    })),
+  };
+}
+
+/** One lesson, with any playable or downloadable media attached to it. */
+export function presentLearnerLesson(data: LearnerLesson) {
+  const { module, lesson } = data;
+
+  return {
+    moduleSlug: module.slug,
+    moduleTitle: module.title,
+    moduleHref: getModulePreviewHref(module.slug),
+    title: lesson.title,
+    summary: lesson.summary,
+    kind: lesson.kind,
+    durationLabel: formatLessonDuration(lesson.kind, lesson.durationMinutes),
+    scenarioTitle: lesson.scenarioTitle ?? null,
+    scenarioBody: lesson.scenarioBody ?? null,
+    reflectionPrompt: lesson.reflectionPrompt ?? null,
+    status: data.status,
+    statusLabel: LESSON_PROGRESS_LABELS[data.status] ?? data.status,
+    isComplete: data.status === "completed",
+    positionLabel: `Lesson ${data.position} of ${data.total}`,
+    heroUrl: data.heroUrl,
+    assets: data.assets.map(({ asset, url }) => ({
+      id: asset._id,
+      title: asset.title,
+      description: asset.description,
+      kind: asset.kind,
+      contentType: asset.contentType ?? null,
+      url,
+      meta: formatAssetMeta(asset),
+    })),
+    previousHref:
+      data.previousSlug === null ? null : getLessonPreviewHref(module.slug, data.previousSlug),
+    nextHref: data.nextSlug === null ? null : getLessonPreviewHref(module.slug, data.nextSlug),
+  };
+}

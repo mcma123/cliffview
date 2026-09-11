@@ -93,6 +93,14 @@ Function surface:
 - Helpers in `convex/lib/`: `authz.ts` (`getActor`, `requireStaff`, `requireAdmin`), `ordering.ts`, `audit.ts`, `counts.ts`, `time.ts`, `storage.ts` (the single R2 client, the URL TTL, the size cap, `deleteBlobIfPresent`), `email.ts` (the single Resend client, the FROM address, the undeliverable-domain guard, `sendInvitationEmail`), `invitationEmail.ts` (pure copy, no imports, so it is testable with zero setup), `invites.ts` (token minting, hashing, `consumeInviteOrThrow`)
 - Shared validators in `convex/validators.ts`, mirroring the unions in `src/domain/academy/entities.ts`
 
+The learner surface (`convex/learn.ts`):
+
+- **The first and only `requireStaff` code in the backend.** Everything else is `requireAdmin`, deliberately, because it exposes drafts, archived content and the whole asset list. `learn.ts` exposes published content the caller has been assigned, and their own progress
+- **An enrollment is the entitlement.** `assignedModuleOrThrow` refuses a module the caller has no `enrollments` row for, and gives the same message for "not assigned" as for "not published" — whether a draft exists is editorial information a learner should not be able to infer
+- **Identity is never an argument.** `requireStaff` reads it from the verified token, so nobody can request another person's training record by passing their id
+- **A module video is `modules.featuredAssetId`, not a lesson attachment.** The two are separate pointers; a hero video is reachable from `learn.moduleDetail` and nowhere else. Reading only `lessonAssets` is why an uploaded video can appear to vanish
+- `learn.recordLessonProgress` writes `lessonProgress`, then **recomputes** `enrollments.progressPercent` and `users.compliancePercent` from the rows rather than incrementing them — the same formula as `staff.recomputeCompliance` and the seed. Completion is sticky: re-opening a finished lesson is a visit, not a regression
+
 Invitations (`convex/invites.ts`, `convex/lib/invites.ts`):
 
 - The prod push installs **six** components for Resend, not four: `resend`,
@@ -123,7 +131,7 @@ Authentication and authorization:
 - Every admin query calls `requireAdmin` first. The four content queries are admin-gated rather than staff-gated because they expose draft and archived content; learner-facing content queries arrive in Phase 8 and will filter on `publishState` instead
 - `auth.viewer` returns null rather than throwing when unauthenticated, because the UI gate uses it to decide what to draw. It exposes only the caller's own name, initials, job title and role
 - Every mutation calls `requireAdmin` first, from its first commit
-- A signed download URL may leave a query only if that query is `requireAdmin`-gated, and it is **never written to a row**. It is an expiring credential, not an address. `assets.adminDetail` resolves one per read via `r2.getUrl`; the earlier blanket ban existed because nothing was gated yet
+- A signed download URL may leave a query only if that query is **gated and scoped to something the caller is entitled to**, and it is **never written to a row**. It is an expiring credential, not an address. `assets.adminDetail` is `requireAdmin`; `learn.moduleDetail` and `learn.lesson` are `requireStaff` **plus** `assignedModuleOrThrow`, so a learner is only ever handed a URL for media inside a module they have been assigned. This rule used to say `requireAdmin`-gated only — written when nothing was gated at all and admins were the only readers, which would have made it impossible for a teacher to watch the video they were assigned
 - Prod environment variables: `JWT_PRIVATE_KEY`, `JWKS`, `SITE_URL`, `RESEND_API_KEY`, `RESEND_TEST_MODE`, plus the five R2 credentials (`R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_TOKEN`). No R2 value may ever be given a `VITE_` name — that would ship the secret in the browser bundle. Generate the keys **headlessly** with `jose` — the interactive `npx @convex-dev/auth` wizard needs a TTY and hangs in a non-interactive session — and set them with the `NAME=VALUE` form (`npx convex env set "JWT_PRIVATE_KEY=$JWT"`), never `env set NAME "$VAL"`, because the key starts with `-----BEGIN` and the CLI reads the leading dash as a flag. `SITE_URL` is `https://cliffview.cyphersoftai.com`, the deployed frontend origin. It was `http://localhost:8081` until the frontend shipped. There is one deployment, so there is one `SITE_URL`: pointing it at the deployed origin is what makes auth redirects work there, and it is why local dev is no longer the origin Convex Auth considers canonical
 
 Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):

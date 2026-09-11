@@ -1,309 +1,272 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { StaffShell } from "@/components/staff-shell";
-import { academyQueries } from "@/infrastructure/academy/container";
+import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  Circle,
-  CirclePlay,
   Download,
   FileText,
   Headphones,
-  MonitorPlay,
-  Play,
   Sparkles,
   Video,
 } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 
+import { presentLearnerLesson } from "@/application/academy/presenters";
+import { PageNotice } from "@/components/page-notice";
+import { StaffShell } from "@/components/staff-shell";
+import { useStaffViewer } from "@/hooks/use-staff-viewer";
+import { api } from "../../convex/_generated/api";
+
+/**
+ * One lesson, read from Convex, with its media playable in place.
+ *
+ * The `$lessonId` param is the module-scoped lesson **slug**, which is what
+ * the original learner URLs carried and why lesson slugs are deliberately not
+ * globally unique.
+ */
 export const Route = createFileRoute("/academy/modules/$moduleSlug/lesson/$lessonId")({
-  head: () => ({ meta: [{ title: "Lesson View · Cliffview Academy" }] }),
-  loader: ({ params }) =>
-    academyQueries.getModuleLessonExperience(params.moduleSlug, params.lessonId),
-  component: ModuleLessonRoute,
+  head: () => ({ meta: [{ title: "Lesson · Cliffview Academy" }] }),
+  component: LessonPage,
 });
 
-function ModuleLessonRoute() {
-  const data = Route.useLoaderData();
-  const resourceCountLabel =
-    data.resources.length === 1 ? "1 supporting doc" : `${data.resources.length} supporting docs`;
+const KIND_ICONS: Record<string, typeof Video> = {
+  video: Video,
+  audio: Headphones,
+  document: FileText,
+  worksheet: Sparkles,
+};
+
+function LessonPage() {
+  const { moduleSlug, lessonId } = Route.useParams();
+  const gate = useStaffViewer();
+  const navigate = useNavigate();
+
+  const { data, isPending, error } = useQuery({
+    ...convexQuery(api.learn.lesson, { moduleSlug, lessonSlug: lessonId }),
+    enabled: gate.status === "ready",
+    retry: false,
+  });
+
+  const record = useMutation({ mutationFn: useConvexMutation(api.learn.recordLessonProgress) });
+
+  // Opening a lesson is what moves it to "in progress", which is also what
+  // starts the module and stamps `lastAccessedAt`. Fired once per lesson, not
+  // on every render, or it would rewrite the row on each repaint.
+  const marked = useRef<string | null>(null);
+  const ready = gate.status === "ready" && data !== undefined;
+  useEffect(() => {
+    const key = `${moduleSlug}/${lessonId}`;
+    if (!ready || marked.current === key) return;
+    marked.current = key;
+    record.mutate({ moduleSlug, lessonSlug: lessonId, completed: false });
+    // `record` is a stable mutation handle; including it would refire on every
+    // mutation state change, which is exactly the loop this guard prevents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, moduleSlug, lessonId]);
+
+  if (gate.status === "loading" || (gate.status === "ready" && isPending)) {
+    return (
+      <StaffShell>
+        <PageNotice title="Loading your lesson…" />
+      </StaffShell>
+    );
+  }
+  if (gate.status === "signed-out") {
+    return (
+      <StaffShell>
+        <PageNotice
+          title="Sign in to continue"
+          body="Your training record is private to you."
+          action={{ label: "Go to sign in", to: "/academy/sign-in" }}
+        />
+      </StaffShell>
+    );
+  }
+  if (data === undefined || error !== null) {
+    return (
+      <StaffShell>
+        <PageNotice
+          title="We could not open this lesson"
+          body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
+          action={{ label: "Back to my modules", to: "/academy/modules" }}
+        />
+      </StaffShell>
+    );
+  }
+
+  const lesson = presentLearnerLesson(data);
+  // Captured here so the async handler below does not close over a value
+  // TypeScript can no longer prove is defined.
+  const nextSlug = data.nextSlug;
+  const previousSlug = data.previousSlug;
+
+  async function complete() {
+    try {
+      const result = await record.mutateAsync({
+        moduleSlug,
+        lessonSlug: lessonId,
+        completed: true,
+      });
+      toast.success(
+        result.moduleCompleted
+          ? "Module complete. Well done."
+          : `Lesson complete — ${result.progressPercent}% of this module done.`,
+      );
+      if (nextSlug !== null) {
+        await navigate({
+          to: "/academy/modules/$moduleSlug/lesson/$lessonId",
+          params: { moduleSlug, lessonId: nextSlug },
+        });
+      }
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not save your progress.");
+    }
+  }
 
   return (
     <StaffShell>
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="grid gap-6 xl:grid-cols-[300px_1fr]">
-          <aside className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <Link
-              to={data.modulePath}
-              className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-gold"
-            >
-              {data.moduleTitle}
-            </Link>
-            <h2 className="mt-3 text-2xl font-bold text-foreground">Sections</h2>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <Link
+          to="/academy/modules/$moduleSlug"
+          params={{ moduleSlug }}
+          className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-gold"
+        >
+          <ArrowLeft className="h-4 w-4" /> {lesson.moduleTitle}
+        </Link>
 
-            <ol className="mt-5 space-y-2">
-              {data.sidebarLessons.map((lesson) => (
-                <li key={lesson.id}>
-                  <Link
-                    to={lesson.href}
-                    className={`flex items-start gap-3 rounded-2xl border px-4 py-3 transition-all ${
-                      lesson.state === "current"
-                        ? "border-primary bg-primary-soft"
-                        : "border-transparent hover:border-border hover:bg-muted/30"
-                    }`}
-                  >
-                    {lesson.state === "complete" ? (
-                      <CheckCircle2 className="mt-0.5 h-5 w-5 text-success" />
-                    ) : lesson.state === "current" ? (
-                      <CirclePlay className="mt-0.5 h-5 w-5 text-primary" />
-                    ) : (
-                      <Circle className="mt-0.5 h-5 w-5 text-muted-foreground" />
-                    )}
-                    <div>
-                      <p className="font-semibold text-foreground">{lesson.title}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {lesson.durationLabel}
-                        {lesson.isAssessment ? " · assessment" : ""}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </aside>
-
-          <div className="space-y-6">
-            <section className="overflow-hidden rounded-3xl bg-gradient-to-r from-primary to-primary-deep p-6 text-primary-foreground shadow-xl sm:p-8">
-              <div className="flex flex-wrap items-start justify-between gap-6">
-                <div className="flex items-center gap-5">
-                  <button className="flex h-20 w-20 items-center justify-center rounded-full bg-gold text-primary-deep shadow-lg">
-                    <Play className="h-9 w-9 fill-current" />
-                  </button>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">
-                      {data.lessonOrderLabel}
-                    </p>
-                    <h1 className="mt-3 text-3xl font-bold">{data.lessonTitle}</h1>
-                    <p className="mt-2 text-sm text-primary-foreground/80">
-                      {data.mediaCard.typeLabel} · {data.mediaCard.durationLabel}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                    Progress
-                  </p>
-                  <p className="mt-2 text-2xl font-bold">{data.progressPercent}%</p>
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-2xl border border-white/10 bg-black/15 p-5">
-                <div className="aspect-[16/7] rounded-2xl border border-dashed border-white/20 p-5">
-                  <div className="flex h-full flex-col justify-between">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
-                      {data.mediaCard.typeLabel.includes("Audio") ? (
-                        <Headphones className="h-4 w-4" />
-                      ) : (
-                        <Video className="h-4 w-4" />
-                      )}
-                      Media placeholder
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-semibold text-white">{data.mediaCard.title}</h2>
-                      <p className="mt-3 max-w-2xl text-sm text-primary-foreground/80">
-                        {data.mediaCard.description}
-                      </p>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-gold to-[#f2cf71]"
-                        style={{ width: `${Math.max(25, data.progressPercent)}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
-              <h2 className="text-3xl font-bold text-foreground">{data.scenarioTitle}</h2>
-              <p className="mt-6 text-lg leading-8 text-foreground/90">{data.scenarioBody}</p>
-
-              <div className="mt-8 rounded-2xl border-l-4 border-gold bg-gold-soft/50 p-5">
-                <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-primary-deep">
-                  What would you do?
-                </p>
-                <p className="mt-3 text-sm italic text-primary-deep/90">{data.reflectionPrompt}</p>
-              </div>
-
-              <Sheet>
-                <div className="mt-8 rounded-3xl border border-border bg-background p-5 sm:p-6">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div className="max-w-2xl">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-gold">
-                        Lesson resources
-                      </p>
-                      <h3 className="mt-2 text-2xl font-bold text-foreground">
-                        Open the supporting docs when you need the detail
-                      </h3>
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        Keep the lesson flow focused, then pull in templates, policy notes, and
-                        guidance without leaving this page.
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <div className="rounded-2xl border border-border bg-card px-4 py-3">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-muted-foreground">
-                          Available now
-                        </p>
-                        <p className="mt-1 text-base font-semibold text-foreground">
-                          {resourceCountLabel}
-                        </p>
-                      </div>
-                      <SheetTrigger asChild>
-                        <button className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-deep">
-                          More docs <ArrowRight className="h-4 w-4" />
-                        </button>
-                      </SheetTrigger>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 md:grid-cols-3">
-                    {data.resources.slice(0, 3).map((resource) => (
-                      <div
-                        key={resource.title}
-                        className="rounded-2xl border border-border bg-card p-4"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
-                            {resource.kind}
-                          </span>
-                          <FileText className="h-4 w-4 text-primary" />
-                        </div>
-                        <h4 className="mt-4 font-semibold text-foreground">{resource.title}</h4>
-                        <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
-                          {resource.meta}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <SheetContent
-                  side="right"
-                  className="w-full overflow-y-auto border-l border-border bg-card p-0 sm:max-w-2xl"
-                >
-                  <div className="flex min-h-full flex-col">
-                    <div className="border-b border-border bg-gradient-to-br from-primary via-primary-deep to-[#173650] px-6 py-8 text-primary-foreground sm:px-8">
-                      <SheetHeader className="space-y-3 text-left">
-                        <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                          <Sparkles className="h-3.5 w-3.5" /> More docs
-                        </div>
-                        <SheetTitle className="pr-10 text-3xl font-bold text-white">
-                          {data.lessonTitle}
-                        </SheetTitle>
-                        <SheetDescription className="max-w-xl text-sm leading-6 text-primary-foreground/80">
-                          Supporting resources for this lesson, styled as placeholder actions for
-                          viewing, downloading, and presenting to staff later when backend file
-                          delivery is wired up.
-                        </SheetDescription>
-                      </SheetHeader>
-
-                      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                            Resource pack
-                          </p>
-                          <p className="mt-1 text-lg font-semibold text-white">
-                            {resourceCountLabel}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                            Module
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-white">
-                            {data.moduleTitle}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3">
-                          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold">
-                            Lesson
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-white">
-                            {data.lessonOrderLabel}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 space-y-4 px-6 py-6 sm:px-8">
-                      {data.resources.map((resource) => (
-                        <div
-                          key={resource.title}
-                          className="rounded-3xl border border-border bg-background p-5 shadow-sm"
-                        >
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="max-w-xl">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
-                                  {resource.kind}
-                                </span>
-                                <span className="rounded-full bg-gold-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary-deep">
-                                  {resource.meta}
-                                </span>
-                              </div>
-                              <h3 className="mt-4 text-xl font-bold text-foreground">
-                                {resource.title}
-                              </h3>
-                              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                                {resource.description}
-                              </p>
-                            </div>
-
-                            <div className="grid gap-2 sm:min-w-44">
-                              <button className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-deep">
-                                <MonitorPlay className="h-4 w-4" /> View doc
-                              </button>
-                              <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted">
-                                <Download className="h-4 w-4" /> Download
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </section>
-
-            <div className="flex items-center justify-between">
-              <Link
-                to={data.previousPath}
-                className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted"
-              >
-                <ArrowLeft className="h-4 w-4" /> Previous
-              </Link>
-              <Link
-                to={data.nextPath}
-                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
-              >
-                Next <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+        <header className="rounded-3xl border border-border bg-card p-8 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
+              {lesson.positionLabel}
+            </span>
+            <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              {lesson.statusLabel}
+            </span>
           </div>
-        </div>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-foreground">
+            {lesson.title}
+          </h1>
+          <p className="mt-3 text-muted-foreground">{lesson.summary}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{lesson.durationLabel}</p>
+        </header>
+
+        {lesson.heroUrl === null ? null : (
+          <video
+            controls
+            playsInline
+            preload="metadata"
+            className="aspect-video w-full overflow-hidden rounded-3xl border border-border bg-black"
+            src={lesson.heroUrl}
+          >
+            Your browser cannot play this video.
+          </video>
+        )}
+
+        {lesson.scenarioBody === null ? null : (
+          <section className="rounded-3xl border border-border bg-card p-8 shadow-sm">
+            <h2 className="text-lg font-black tracking-tight text-foreground">
+              {lesson.scenarioTitle ?? "Scenario"}
+            </h2>
+            <p className="mt-3 whitespace-pre-line text-sm text-foreground">
+              {lesson.scenarioBody}
+            </p>
+          </section>
+        )}
+
+        {lesson.assets.length === 0 ? null : (
+          <section className="space-y-3">
+            <h2 className="text-lg font-black tracking-tight text-foreground">
+              Supporting material
+            </h2>
+            {lesson.assets.map((asset) => {
+              const Icon = KIND_ICONS[asset.kind] ?? FileText;
+              return (
+                <article
+                  key={asset.id}
+                  className="rounded-3xl border border-border bg-card p-6 shadow-sm"
+                >
+                  {asset.url !== null && asset.kind === "video" ? (
+                    <video
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="mb-4 aspect-video w-full rounded-2xl bg-black"
+                      src={asset.url}
+                    />
+                  ) : asset.url !== null && asset.kind === "audio" ? (
+                    <audio controls preload="metadata" className="mb-4 w-full" src={asset.url} />
+                  ) : null}
+
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+                      <div>
+                        <p className="font-bold text-foreground">{asset.title}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{asset.description}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{asset.meta}</p>
+                      </div>
+                    </div>
+                    {asset.url === null ? (
+                      <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        No file yet
+                      </span>
+                    ) : (
+                      <a
+                        href={asset.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
+                      >
+                        <Download className="h-4 w-4" /> Open
+                      </a>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        )}
+
+        {lesson.reflectionPrompt === null ? null : (
+          <section className="rounded-3xl border border-gold/40 bg-gold-soft/40 p-8">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-primary-deep">
+              Reflect
+            </h2>
+            <p className="mt-2 text-sm text-foreground">{lesson.reflectionPrompt}</p>
+          </section>
+        )}
+
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-6">
+          {lesson.previousHref === null ? (
+            <span />
+          ) : (
+            <Link
+              to="/academy/modules/$moduleSlug/lesson/$lessonId"
+              params={{ moduleSlug, lessonId: previousSlug! }}
+              className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
+            >
+              <ArrowLeft className="h-4 w-4" /> Previous
+            </Link>
+          )}
+          <button
+            onClick={complete}
+            disabled={record.isPending}
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {lesson.isComplete
+              ? "Completed"
+              : record.isPending
+                ? "Saving…"
+                : lesson.nextHref === null
+                  ? "Mark complete"
+                  : "Complete and continue"}
+            {lesson.nextHref === null ? null : <ArrowRight className="h-4 w-4" />}
+          </button>
+        </nav>
       </div>
     </StaffShell>
   );

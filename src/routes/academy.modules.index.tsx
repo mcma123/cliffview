@@ -1,216 +1,186 @@
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { StaffShell } from "@/components/staff-shell";
-import type { ModuleStatus } from "@/domain/academy/entities";
-import { academyQueries } from "@/infrastructure/academy/container";
-import { ArrowRight, CheckCircle2, Circle, Lock, Play, Search, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Clock, Play, Search } from "lucide-react";
+import { useMemo, useState } from "react";
 
+import { presentLearnerModules } from "@/application/academy/presenters";
+import { PageNotice } from "@/components/page-notice";
+import { StaffShell } from "@/components/staff-shell";
+import { useStaffViewer } from "@/hooks/use-staff-viewer";
+import { api } from "../../convex/_generated/api";
+
+/**
+ * The learner's module library: everything assigned to them, and nothing else.
+ *
+ * There is deliberately no "locked" or "available but not assigned" state. An
+ * enrollment row IS the entitlement, so a module either appears here because
+ * an admin assigned it, or it does not appear at all.
+ *
+ * Client-rendered with no loader prefetch — `learn.myModules` is
+ * `requireStaff` and there is no identity on the server.
+ */
 export const Route = createFileRoute("/academy/modules/")({
-  head: () => ({ meta: [{ title: "Module Library · Cliffview Academy" }] }),
-  loader: () => academyQueries.getModuleLibrary(),
-  component: Modules,
+  head: () => ({ meta: [{ title: "My Modules · Cliffview Academy" }] }),
+  component: ModuleLibrary,
 });
 
-function StatusBadge({ status }: { status: ModuleStatus }) {
-  if (status === "complete") {
+function StatusPill({ status, label }: { status: string; label: string }) {
+  if (status === "completed") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-success">
-        <CheckCircle2 className="h-3 w-3" /> Complete
+        <CheckCircle2 className="h-3 w-3" /> {label}
       </span>
     );
   }
-  if (status === "in-progress") {
+  if (status === "in_progress") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-gold-soft px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-deep">
-        <Play className="h-3 w-3" /> In Progress
-      </span>
-    );
-  }
-  if (status === "locked") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-        <Lock className="h-3 w-3" /> Locked
+        <Play className="h-3 w-3" /> {label}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-      <Circle className="h-3 w-3" /> Available
+      <Circle className="h-3 w-3" /> {label}
     </span>
   );
 }
 
-function Modules() {
-  const data = Route.useLoaderData();
+function ModuleLibrary() {
+  const gate = useStaffViewer();
+  const now = Date.now();
+  const [search, setSearch] = useState("");
+
+  const { data, isPending, error } = useQuery({
+    ...convexQuery(api.learn.myModules, {}),
+    enabled: gate.status === "ready",
+    retry: false,
+  });
+
+  const view = data === undefined ? null : presentLearnerModules(data, now);
+  const visible = useMemo(() => {
+    if (view === null) return [];
+    const needle = search.trim().toLowerCase();
+    if (needle.length === 0) return view.modules;
+    return view.modules.filter(
+      (module) =>
+        module.title.toLowerCase().includes(needle) ||
+        module.category.toLowerCase().includes(needle),
+    );
+  }, [view, search]);
+
+  if (gate.status === "loading" || (gate.status === "ready" && isPending)) {
+    return (
+      <StaffShell>
+        <PageNotice title="Loading your modules…" />
+      </StaffShell>
+    );
+  }
+  if (gate.status === "signed-out") {
+    return (
+      <StaffShell>
+        <PageNotice
+          title="Sign in to continue"
+          body="Your training record is private to you."
+          action={{ label: "Go to sign in", to: "/academy/sign-in" }}
+        />
+      </StaffShell>
+    );
+  }
+  if (view === null || error !== null) {
+    return (
+      <StaffShell>
+        <PageNotice
+          title="We could not load your modules"
+          body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
+        />
+      </StaffShell>
+    );
+  }
 
   return (
     <StaffShell>
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Module Library</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{data.summary}</p>
-        </div>
-
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-xl border border-input bg-card px-4 py-2.5">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              placeholder="Search modules..."
-              className="flex-1 bg-transparent text-sm outline-none"
-            />
+      <div className="mx-auto max-w-6xl space-y-8">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-foreground">My Modules</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {view.modules.length === 0
+                ? "Nothing has been assigned to you yet."
+                : `${view.modules.length} assigned to you.`}
+            </p>
           </div>
-        </div>
+          {view.modules.length === 0 ? null : (
+            <label className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search my modules"
+                className="w-full rounded-2xl border border-input bg-background py-2.5 pl-11 pr-4 text-sm outline-none focus:border-primary"
+              />
+            </label>
+          )}
+        </header>
 
-        <div className="flex flex-wrap gap-2">
-          {data.tabs.map((tab) => (
-            <button
-              key={tab.label}
-              className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition-colors ${
-                tab.active
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary"
-              }`}
-            >
-              {tab.label} — {tab.count}
-            </button>
-          ))}
-        </div>
-
-        {data.featuredModule && (
-          <Link
-            to={data.featuredModule.href}
-            className="block overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary via-primary-deep to-[#173650] text-primary-foreground shadow-xl transition-transform hover:-translate-y-0.5"
-          >
-            <div className="grid gap-6 p-7 lg:grid-cols-[1.2fr_0.8fr] lg:p-8">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-gold px-3 py-1 text-[10px] font-bold uppercase tracking-[0.25em] text-primary-deep">
-                  <Sparkles className="h-3.5 w-3.5" /> Featured demo module
-                </div>
-                <p className="mt-5 text-xs font-bold uppercase tracking-[0.35em] text-gold">
-                  {data.featuredModule.category}
-                </p>
-                <h2 className="mt-3 text-3xl font-bold sm:text-4xl">{data.featuredModule.title}</h2>
-                <p className="mt-4 max-w-3xl text-sm leading-6 text-primary-foreground/85">
-                  {data.featuredModule.description}
-                </p>
-                <div className="mt-6 flex flex-wrap gap-3 text-xs text-primary-foreground/80">
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-                    {data.featuredModule.meta}
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-                    {data.featuredModule.audience}
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-                    {data.featuredModule.lastUpdatedLabel}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between rounded-3xl border border-white/10 bg-white/6 p-6 backdrop-blur">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
-                    New in the portal
-                  </p>
-                  <p className="mt-3 text-sm text-primary-foreground/80">
-                    A polished learner-side demo showing how admin-authored lessons, media, and docs
-                    will appear once content is created in the builder.
-                  </p>
-                </div>
-                <div className="mt-6">
-                  <div className="flex items-center justify-between text-xs text-primary-foreground/75">
-                    <span className="font-semibold text-white">
-                      {data.featuredModule.progressPercent}% complete
-                    </span>
-                    <span>Preview-ready</span>
-                  </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-gold to-[#f5d16c]"
-                      style={{ width: `${Math.max(18, data.featuredModule.progressPercent)}%` }}
-                    />
-                  </div>
-                  <div className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-gold px-4 py-3 text-sm font-semibold text-primary-deep">
-                    Open demo module <ArrowRight className="h-4 w-4" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Link>
-        )}
-
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {data.modules.map((module) => {
-            const locked = module.status === "locked";
-            const featured = module.status === "in-progress";
-            const inner = (
-              <div
-                className={`group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border p-6 transition-all duration-300 ease-in-out ${
-                  featured
-                    ? "border-primary bg-gradient-to-br from-card to-primary/5 shadow-xl shadow-primary/10 hover:-translate-y-1 hover:shadow-primary/20"
-                    : locked
-                      ? "border-border bg-muted/20 opacity-70 grayscale"
-                      : "border-border bg-card hover:-translate-y-1 hover:border-primary/50 hover:bg-gradient-to-br hover:from-card hover:to-primary/5 hover:shadow-xl"
-                }`}
+        {view.modules.length === 0 ? (
+          <PageNotice
+            title="No modules assigned yet"
+            body="An SMT administrator assigns your training. Once they do, it appears here."
+            action={{ label: "Back to dashboard", to: "/academy/dashboard" }}
+          />
+        ) : visible.length === 0 ? (
+          <PageNotice title="No module matches that search" />
+        ) : (
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {visible.map((module) => (
+              <Link
+                key={module.id}
+                to="/academy/modules/$moduleSlug"
+                params={{ moduleSlug: module.slug }}
+                className="group flex flex-col rounded-3xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-primary/50"
               >
-                {/* Decorative background element for hover */}
-                {!locked && (
-                  <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-primary/5 opacity-0 blur-2xl transition-opacity duration-500 group-hover:opacity-100" />
-                )}
-
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors group-hover:text-primary/70">
-                      Module {module.number}
-                    </p>
-                    <StatusBadge status={module.status} />
-                  </div>
-                  <h3 className="mt-3 text-xl font-bold text-foreground transition-colors group-hover:text-primary">
-                    {module.title}
-                  </h3>
-                  <p className="mt-2 text-xs font-medium text-muted-foreground line-clamp-2">
-                    {module.meta}
-                  </p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                    {module.number}
+                  </span>
+                  <StatusPill status={module.status} label={module.statusLabel} />
                 </div>
+                <h2 className="mt-3 text-lg font-bold text-foreground">{module.title}</h2>
+                <p className="mt-2 flex-1 text-sm text-muted-foreground">{module.description}</p>
 
-                <div className="mt-8">
-                  <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-                    <span>Progress</span>
-                    <span className="font-bold text-foreground">{module.progressPercent}%</span>
-                  </div>
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ease-out ${
-                        featured
-                          ? "bg-gradient-to-r from-primary to-gold"
-                          : "bg-primary/70 group-hover:bg-primary"
-                      }`}
-                      style={{ width: `${module.progressPercent}%` }}
-                    />
-                  </div>
-                  {!locked && (
-                    <div className="mt-5 flex items-center gap-2 text-xs font-bold text-primary opacity-0 transition-all duration-300 group-hover:opacity-100">
-                      View lessons{" "}
-                      <ArrowRight className="h-3 w-3 -translate-x-2 transition-transform duration-300 group-hover:translate-x-0" />
-                    </div>
+                <div className="mt-4 flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3.5 w-3.5" /> {module.durationMinutes} min
+                  </span>
+                  <span>·</span>
+                  <span>{module.lessonsLabel}</span>
+                  {module.dueLabel === null ? null : (
+                    <>
+                      <span>·</span>
+                      <span className={module.dueLabel === "Overdue" ? "text-destructive" : ""}>
+                        {module.dueLabel}
+                      </span>
+                    </>
                   )}
                 </div>
-              </div>
-            );
 
-            return locked ? (
-              <div key={module.number} className="h-full">
-                {inner}
-              </div>
-            ) : (
-              <Link
-                key={module.number}
-                to={module.href}
-                className="block h-full outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-3xl"
-              >
-                {inner}
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-success"
+                    style={{ width: `${module.progressPercent}%` }}
+                  />
+                </div>
+
+                <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">
+                  {module.status === "not_started" ? "Start module" : "Continue"}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </span>
               </Link>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </StaffShell>
   );

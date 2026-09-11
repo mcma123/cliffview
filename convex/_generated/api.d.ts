@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
 import type * as invites from "../invites.js";
+import type * as learn from "../learn.js";
 import type * as lessons from "../lessons.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_authz from "../lib/authz.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   dashboard: typeof dashboard;
   http: typeof http;
   invites: typeof invites;
+  learn: typeof learn;
   lessons: typeof lessons;
   "lib/audit": typeof lib_audit;
   "lib/authz": typeof lib_authz;
