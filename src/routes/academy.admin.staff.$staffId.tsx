@@ -129,24 +129,39 @@ function AdminStaffDetailComponent() {
   async function sendInvite() {
     try {
       const result = await resendInvite.mutateAsync({ staffId: id });
-      if (result.link === null) {
-        toast.warning(`No invitation could be sent to ${result.email}.`, {
-          description: "The deployment has no SITE_URL configured, so no link could be built.",
+      const link = result.link;
+      const copy =
+        link === null
+          ? undefined
+          : {
+              label: "Copy link",
+              onClick: () => {
+                void navigator.clipboard
+                  .writeText(link)
+                  .then(() => toast.success("Invitation link copied."))
+                  .catch(() => toast.error("Could not copy. Check clipboard permissions."));
+              },
+            };
+
+      if (result.sent) {
+        toast.success(`Invitation sent to ${result.email}.`, {
+          description: "Valid for 7 days, and it works once.",
+          action: copy,
         });
         return;
       }
-      const link = result.link;
-      toast.success(`Invitation sent to ${result.email}.`, {
-        description: "Valid for 7 days, and it works once.",
-        action: {
-          label: "Copy link",
-          onClick: () => {
-            void navigator.clipboard
-              .writeText(link)
-              .then(() => toast.success("Invitation link copied."))
-              .catch(() => toast.error("Could not copy. Check clipboard permissions."));
-          },
-        },
+
+      // The invitation exists either way — only the email did not go. Say so
+      // plainly rather than claiming a delivery that did not happen.
+      toast.warning(`Invitation created, but not emailed to ${result.email}.`, {
+        description:
+          result.reason === "undeliverable-domain"
+            ? "That address is on a placeholder domain that can never receive mail. Copy the link and send it another way."
+            : result.reason === "no-api-key"
+              ? "No Resend API key is set on the deployment. Copy the link and send it another way."
+              : "No SITE_URL is set on the deployment, so no link could be built.",
+        action: copy,
+        duration: 12000,
       });
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "Could not send that invitation.");

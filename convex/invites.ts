@@ -42,6 +42,9 @@ import {
  * that inserts the credential. See `convex/lib/invites.ts`.
  */
 
+/** What `deliver` reports back about one attempt. */
+type DeliveryResult = { sent: boolean; link: string | null; reason: string | null };
+
 /** What `inspect` and `preview` report about a token. */
 type InviteInspection = {
   state: string;
@@ -169,8 +172,12 @@ export const deliver = internalAction({
     firstName: v.string(),
     invitedByName: v.string(),
   },
-  returns: v.union(v.string(), v.null()),
-  handler: async (ctx, args): Promise<string | null> => {
+  returns: v.object({
+    sent: v.boolean(),
+    link: v.union(v.string(), v.null()),
+    reason: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args): Promise<DeliveryResult> => {
     const token = generateInviteToken();
     const tokenHash = await hashInviteToken(token);
 
@@ -194,9 +201,16 @@ export const deliver = internalAction({
       summary: args.email,
     });
 
-    // Returned so `resend` can offer it for copying when email is not an
-    // option: an undeliverable seeded domain, or a bounce.
-    return outcome.link;
+    // The link comes back even when the send was skipped, so `resend` can
+    // offer it for copying: an undeliverable seeded domain, or a bounce. The
+    // `sent` flag comes back too, because telling an admin "invitation sent"
+    // when nothing left the building is the exact false success this codebase
+    // spends its comments warning about.
+    return {
+      sent: outcome.sent,
+      link: outcome.link,
+      reason: outcome.sent ? null : outcome.reason,
+    };
   },
 });
 
@@ -338,18 +352,26 @@ export const accept = action({
  */
 export const resend = action({
   args: { staffId: v.id("users") },
-  returns: v.object({ email: v.string(), link: v.union(v.string(), v.null()) }),
-  handler: async (ctx, args): Promise<{ email: string; link: string | null }> => {
+  returns: v.object({
+    email: v.string(),
+    link: v.union(v.string(), v.null()),
+    sent: v.boolean(),
+    reason: v.union(v.string(), v.null()),
+  }),
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ email: string; link: string | null; sent: boolean; reason: string | null }> => {
     // First line, and a real gate: identity propagates into `runQuery`.
     const target = await ctx.runQuery(internal.invites.prepare, { staffId: args.staffId });
 
-    const link: string | null = await ctx.runAction(internal.invites.deliver, {
+    const result: DeliveryResult = await ctx.runAction(internal.invites.deliver, {
       userId: args.staffId,
       invitedBy: target.invitedBy,
       email: target.email,
       firstName: target.firstName,
       invitedByName: target.invitedByName,
     });
-    return { email: target.email, link };
+    return { email: target.email, ...result };
   },
 });
