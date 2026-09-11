@@ -17,6 +17,7 @@ import type * as learn from "../learn.js";
 import type * as lessons from "../lessons.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_authz from "../lib/authz.js";
+import type * as lib_awards from "../lib/awards.js";
 import type * as lib_counts from "../lib/counts.js";
 import type * as lib_email from "../lib/email.js";
 import type * as lib_invitationEmail from "../lib/invitationEmail.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   lessons: typeof lessons;
   "lib/audit": typeof lib_audit;
   "lib/authz": typeof lib_authz;
+  "lib/awards": typeof lib_awards;
   "lib/counts": typeof lib_counts;
   "lib/email": typeof lib_email;
   "lib/invitationEmail": typeof lib_invitationEmail;

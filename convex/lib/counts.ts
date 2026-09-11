@@ -34,6 +34,15 @@ export const MAX_PHASES = 50;
 export const MAX_STAFF = 500;
 export const TREND_MONTHS = 6;
 
+/**
+ * Activity rows read when computing one person's streak.
+ *
+ * `progressEvents` genuinely grows without bound, so this read is capped like
+ * every other. A streak only ever needs the recent tail, and 500 events is far
+ * more than the longest streak anyone could be working on.
+ */
+export const MAX_ACTIVITY = 500;
+
 /** Read a counter, treating a missing row as zero. */
 export async function readCounter(ctx: QueryCtx, name: CounterName): Promise<number> {
   const row = await ctx.db

@@ -42,6 +42,10 @@ const KIND_ICONS: Record<string, typeof Video> = {
 function LessonPage() {
   const { moduleSlug, lessonId } = Route.useParams();
   const gate = useStaffViewer();
+  // Real name, initials, streak, sign-out, and the admin link only for
+  // admins. Empty while the gate is still resolving, so the chrome shows
+  // nothing rather than a placeholder identity.
+  const shell = gate.status === "ready" ? gate.shellProps : {};
   const navigate = useNavigate();
 
   const { data, isPending, error } = useQuery({
@@ -69,14 +73,14 @@ function LessonPage() {
 
   if (gate.status === "loading" || (gate.status === "ready" && isPending)) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice title="Loading your lesson…" />
       </StaffShell>
     );
   }
   if (gate.status === "signed-out") {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="Sign in to continue"
           body="Your training record is private to you."
@@ -87,7 +91,7 @@ function LessonPage() {
   }
   if (data === undefined || error !== null) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="We could not open this lesson"
           body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
@@ -127,7 +131,7 @@ function LessonPage() {
   }
 
   return (
-    <StaffShell>
+    <StaffShell {...shell}>
       <div className="mx-auto max-w-4xl space-y-6">
         <Link
           to="/academy/modules/$moduleSlug"

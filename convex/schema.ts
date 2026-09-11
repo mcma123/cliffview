@@ -348,6 +348,28 @@ export default defineSchema({
     .index("by_userId_and_moduleId", ["userId", "moduleId"])
     .index("by_moduleId_and_attemptedAt", ["moduleId", "attemptedAt"]),
 
+  /**
+   * Badges a person has earned, one row per award.
+   *
+   * A deliberate exception to "nothing derivable is stored", and worth stating
+   * why. Most badge conditions could be recomputed at read time — but a badge
+   * like a three-day streak must stay earned once the streak lapses, and
+   * "when did I earn this" is not derivable from anything. Storing the award
+   * is what makes it an achievement rather than a live status light.
+   *
+   * `badgeKey` is a string, not a union, so adding a badge to
+   * `convex/lib/awards.ts` needs no schema push. An unknown key is ignored at
+   * read time rather than rendered as a hole.
+   */
+  badgeAwards: defineTable({
+    userId: v.id("users"),
+    badgeKey: v.string(),
+    awardedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    // Awarding probes this first, which is what makes it idempotent.
+    .index("by_userId_and_badgeKey", ["userId", "badgeKey"]),
+
   // ---------------------------------------------------------------------------
   // AI question review
   // ---------------------------------------------------------------------------

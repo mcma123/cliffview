@@ -23,6 +23,10 @@ export const Route = createFileRoute("/academy/dashboard")({
 
 function Dashboard() {
   const gate = useStaffViewer();
+  // Real name, initials, streak, sign-out, and the admin link only for
+  // admins. Empty while the gate is still resolving, so the chrome shows
+  // nothing rather than a placeholder identity.
+  const shell = gate.status === "ready" ? gate.shellProps : {};
   const now = Date.now();
 
   const { data, isPending, error } = useQuery({
@@ -33,14 +37,14 @@ function Dashboard() {
 
   if (gate.status === "loading" || (gate.status === "ready" && isPending)) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice title="Loading your dashboard…" />
       </StaffShell>
     );
   }
   if (gate.status === "signed-out") {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="Sign in to continue"
           body="Your training record is private to you."
@@ -51,7 +55,7 @@ function Dashboard() {
   }
   if (data === undefined || error !== null) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="We could not load your dashboard"
           body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
@@ -63,7 +67,7 @@ function Dashboard() {
   const view = presentLearnerModules(data, now);
 
   return (
-    <StaffShell>
+    <StaffShell {...shell}>
       <div className="mx-auto max-w-6xl space-y-8">
         <header className="rounded-3xl border border-border bg-gradient-to-br from-primary via-primary-deep to-[#173650] p-8 text-primary-foreground shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">

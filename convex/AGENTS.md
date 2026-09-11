@@ -93,6 +93,15 @@ Function surface:
 - Helpers in `convex/lib/`: `authz.ts` (`getActor`, `requireStaff`, `requireAdmin`), `ordering.ts`, `audit.ts`, `counts.ts`, `time.ts`, `storage.ts` (the single R2 client, the URL TTL, the size cap, `deleteBlobIfPresent`), `email.ts` (the single Resend client, the FROM address, the undeliverable-domain guard, `sendInvitationEmail`), `invitationEmail.ts` (pure copy, no imports, so it is testable with zero setup), `invites.ts` (token minting, hashing, `consumeInviteOrThrow`)
 - Shared validators in `convex/validators.ts`, mirroring the unions in `src/domain/academy/entities.ts`
 
+Awards and the leaderboard (`convex/lib/awards.ts`, `convex/learn.ts`):
+
+- **Awards are the one thing here that is incremented, not recomputed**, and that is deliberate: XP and CPTD points record what somebody was paid at the time, not a function of their current state. Recomputing them would un-pay a teacher whose module was later archived. What keeps the increment honest is that `recordLessonProgress` captures the prior status _before_ writing anything and pays only on the transition into completed — replaying a finished lesson pays nothing
+- **What work is worth lives in one module.** `XP_PER_LESSON`, `xpForModule`, the badge catalogue and the streak rule are all in `convex/lib/awards.ts`, pure and database-free, so the mutation that pays out and the query that explains the total cannot disagree
+- **Every badge must be answerable from data the app records.** The list this replaced contained "Mentor — help 3 colleagues", which no table could ever answer, so it would have stayed locked forever while looking like something you could work towards
+- **`badgeAwards` is a deliberate exception to "nothing derivable is stored".** A three-day-streak badge must stay earned after the streak lapses, and "when did I earn this" is derivable from nothing
+- **`progressEvents` is written for the first time here**, and it is the only per-user activity history that exists — a streak is computable only because of it. Nothing backfills it, so every streak genuinely starts at 1
+- **`learn.leaderboard` is the first query to return one colleague's data to another.** The personnel file stays `requireAdmin`; what makes this defensible is how narrow it is. It returns name, initials, phase name and `xpTotal` and is hand-shaped rather than `schema.doc("users")` precisely so it cannot drift into returning email, `employmentStatus`, `jobTitle`, `compliancePercent` — the school's performance metric — or an `Id<"users">` that would be a key into the rest of the record. `super_admin` is excluded for the same reason `dashboard.adminOverview` excludes it. A test asserts the returned keys, so widening the shape breaks the build rather than quietly leaking
+
 The learner surface (`convex/learn.ts`):
 
 - **The first and only `requireStaff` code in the backend.** Everything else is `requireAdmin`, deliberately, because it exposes drafts, archived content and the whole asset list. `learn.ts` exposes published content the caller has been assigned, and their own progress

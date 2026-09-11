@@ -767,3 +767,89 @@ export function presentLearnerLesson(data: LearnerLesson) {
     nextHref: data.nextSlug === null ? null : getLessonPreviewHref(module.slug, data.nextSlug),
   };
 }
+
+type LearnerProfile = FunctionReturnType<typeof api.learn.profile>;
+type LearnerLeaderboard = FunctionReturnType<typeof api.learn.leaderboard>;
+
+/** "12 May 2026". A real date, from a real timestamp. */
+export function formatAwardDate(at: number): string {
+  return new Date(at).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * How to describe a streak honestly.
+ *
+ * `progressEvents` has no history before this feature shipped and nothing
+ * backfills it, so every streak genuinely starts at one. Saying "start a
+ * streak" at zero is truthful; "0-day streak" reads like a bug.
+ */
+export function formatStreak(days: number): string {
+  if (days === 0) return "No streak yet";
+  if (days === 1) return "1 day";
+  return `${days} days`;
+}
+
+export function presentLearnerProfile(data: LearnerProfile) {
+  const earned = data.badges.filter((badge) => badge.awardedAt !== null);
+
+  return {
+    name: data.name,
+    initials: data.initials,
+    jobTitle: data.jobTitle,
+    phaseName: data.phaseName,
+    email: data.email,
+    joinedLabel: `Joined ${formatAwardDate(data.joinedAt)}`,
+    xpTotal: data.xpTotal,
+    cptdPoints: data.cptdPoints,
+    compliancePercent: data.compliancePercent,
+    streakDays: data.streakDays,
+    streakLabel: formatStreak(data.streakDays),
+    // Module-level, never lesson-level: `lessonProgress` is empty for seeded
+    // enrollments that report 100%, so a lesson counter would contradict the
+    // percentage sitting beside it.
+    modulesLabel: `${data.modulesCompleted} of ${data.modulesAssigned} modules complete`,
+    badgesLabel: `${earned.length} of ${data.badges.length} unlocked`,
+    badges: data.badges.map((badge) => ({
+      key: badge.key,
+      label: badge.label,
+      description: badge.description,
+      earned: badge.awardedAt !== null,
+      earnedLabel: badge.awardedAt === null ? null : formatAwardDate(badge.awardedAt),
+    })),
+    ledger: data.ledger.map((row) => ({
+      id: row.moduleId,
+      title: row.title,
+      slug: row.slug,
+      href: getModulePreviewHref(row.slug),
+      cptdPoints: row.cptdPoints,
+      dateLabel: row.completedAt === null ? "Date not recorded" : formatAwardDate(row.completedAt),
+      scoreLabel: row.score === null ? null : `${row.score}%`,
+    })),
+    ledgerTotal: data.ledger.reduce((sum, row) => sum + row.cptdPoints, 0),
+  };
+}
+
+export function presentLearnerLeaderboard(data: LearnerLeaderboard) {
+  return {
+    rows: data.rows,
+    podium: data.rows.slice(0, 3),
+    rest: data.rows.slice(3),
+    myRank: data.myRank,
+    /**
+     * Says something true or says nothing. The page this replaces told every
+     * visitor they were "#1, 60 XP ahead of #2" regardless of who they were.
+     */
+    standingLabel:
+      data.myRank === null
+        ? null
+        : data.myRank === 1
+          ? "You are top of the board."
+          : data.xpToNextRank === null
+            ? `You are #${data.myRank}.`
+            : `You are #${data.myRank} — ${data.xpToNextRank} XP behind #${data.myRank - 1}.`,
+  };
+}

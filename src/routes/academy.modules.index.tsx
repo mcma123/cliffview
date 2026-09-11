@@ -49,6 +49,10 @@ function StatusPill({ status, label }: { status: string; label: string }) {
 
 function ModuleLibrary() {
   const gate = useStaffViewer();
+  // Real name, initials, streak, sign-out, and the admin link only for
+  // admins. Empty while the gate is still resolving, so the chrome shows
+  // nothing rather than a placeholder identity.
+  const shell = gate.status === "ready" ? gate.shellProps : {};
   const now = Date.now();
   const [search, setSearch] = useState("");
 
@@ -72,14 +76,14 @@ function ModuleLibrary() {
 
   if (gate.status === "loading" || (gate.status === "ready" && isPending)) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice title="Loading your modules…" />
       </StaffShell>
     );
   }
   if (gate.status === "signed-out") {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="Sign in to continue"
           body="Your training record is private to you."
@@ -90,7 +94,7 @@ function ModuleLibrary() {
   }
   if (view === null || error !== null) {
     return (
-      <StaffShell>
+      <StaffShell {...shell}>
         <PageNotice
           title="We could not load your modules"
           body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
@@ -100,7 +104,7 @@ function ModuleLibrary() {
   }
 
   return (
-    <StaffShell>
+    <StaffShell {...shell}>
       <div className="mx-auto max-w-6xl space-y-8">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
