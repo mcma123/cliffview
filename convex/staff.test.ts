@@ -32,7 +32,9 @@ function newTest() {
   return t;
 }
 
-let t: ReturnType<typeof convexTest>;
+// `typeof newTest`, not `typeof convexTest`: the latter loses the schema
+// generic, and with it every index name inside `t.run`.
+let t: ReturnType<typeof newTest>;
 let phaseId: Id<"phases">;
 let otherPhaseId: Id<"phases">;
 let adminId: Id<"users">;
@@ -522,5 +524,307 @@ describe("the directory read", () => {
     expect(result.modules[0].module.title).toBe("Staff Fixture");
     expect(result.modules[0].enrollment.score).toBe(65);
     expect(result.phaseName).toBe("Foundation Phase");
+  });
+});
+
+describe("assigning modules", () => {
+  /** A published module, since only published content can be assigned. */
+  async function publishedModule(slug: string, sequence: number) {
+    return await t.run(
+      async (ctx) =>
+        await ctx.db.insert("modules", {
+          slug,
+          number: `0${sequence}`,
+          sequence,
+          title: `Module ${slug}`,
+          description: "d",
+          audience: "a",
+          outcome: "o",
+          category: "Core Policies" as const,
+          durationMinutes: 10,
+          cptdPoints: 1,
+          passMark: 80,
+          format: "Self-paced",
+          publishState: "published" as const,
+          contentUpdatedAt: Date.now(),
+        }),
+    );
+  }
+
+  const enrollmentsOf = async (userId: Id<"users">) =>
+    await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("enrollments")
+          .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId))
+          .collect(),
+    );
+
+  test("no identity is refused", async () => {
+    const published = await publishedModule("assign-a", 2);
+    await expect(
+      t.mutation(api.staff.assignModules, { staffId, moduleIds: [published] }),
+    ).rejects.toThrow(/UNAUTHENTICATED|Sign in/i);
+  });
+
+  test("a staff identity is refused - assigning work is an admin act", async () => {
+    const published = await publishedModule("assign-a", 2);
+    await expect(
+      asUser(staffId).mutation(api.staff.assignModules, { staffId, moduleIds: [published] }),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+  });
+
+  test("an inactive admin is refused", async () => {
+    const published = await publishedModule("assign-a", 2);
+    await expect(
+      asUser(inactiveAdminId).mutation(api.staff.assignModules, {
+        staffId,
+        moduleIds: [published],
+      }),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+  });
+
+  test("an admin assigns modules, and they start at nothing earned", async () => {
+    const first = await publishedModule("assign-a", 2);
+    const second = await publishedModule("assign-b", 3);
+
+    const result = await admin().mutation(api.staff.assignModules, {
+      staffId,
+      moduleIds: [first, second],
+    });
+    expect(result).toEqual({ assigned: 2, alreadyAssigned: 0 });
+
+    const rows = await enrollmentsOf(staffId);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.status).toBe("not_started");
+      expect(row.progressPercent).toBe(0);
+      expect(row.score).toBeUndefined();
+      expect(row.assignedAt).toBeGreaterThan(0);
+    }
+  });
+
+  test("re-assigning is a no-op, not a second row", async () => {
+    const first = await publishedModule("assign-a", 2);
+    await admin().mutation(api.staff.assignModules, { staffId, moduleIds: [first] });
+
+    const again = await admin().mutation(api.staff.assignModules, {
+      staffId,
+      moduleIds: [first],
+    });
+    expect(again).toEqual({ assigned: 0, alreadyAssigned: 1 });
+    expect(await enrollmentsOf(staffId)).toHaveLength(1);
+  });
+
+  test("a module repeated within one call is written once", async () => {
+    const first = await publishedModule("assign-a", 2);
+    const result = await admin().mutation(api.staff.assignModules, {
+      staffId,
+      moduleIds: [first, first, first],
+    });
+    expect(result).toEqual({ assigned: 1, alreadyAssigned: 0 });
+    expect(await enrollmentsOf(staffId)).toHaveLength(1);
+  });
+
+  test("a draft module cannot be assigned - it is unfinished content", async () => {
+    await expect(
+      admin().mutation(api.staff.assignModules, { staffId, moduleIds: [moduleId] }),
+    ).rejects.toThrow(/NOT_PUBLISHED|not published/i);
+    expect(await enrollmentsOf(staffId)).toHaveLength(0);
+  });
+
+  test("one draft in the batch assigns nothing at all", async () => {
+    const published = await publishedModule("assign-a", 2);
+    await expect(
+      admin().mutation(api.staff.assignModules, { staffId, moduleIds: [published, moduleId] }),
+    ).rejects.toThrow(/NOT_PUBLISHED|not published/i);
+    // The mutation is a transaction, so the published one rolls back with it.
+    expect(await enrollmentsOf(staffId)).toHaveLength(0);
+  });
+
+  test("an empty selection is refused", async () => {
+    await expect(
+      admin().mutation(api.staff.assignModules, { staffId, moduleIds: [] }),
+    ).rejects.toThrow(/INVALID|at least one/i);
+  });
+
+  test("an operator account cannot be assigned modules", async () => {
+    const published = await publishedModule("assign-a", 2);
+    const { userId } = await t.mutation(internal.auth.provisionAdmin, {
+      email: "admin@cliffview.example",
+    });
+    await expect(
+      admin().mutation(api.staff.assignModules, { staffId: userId, moduleIds: [published] }),
+    ).rejects.toThrow(/FORBIDDEN|not editable/i);
+  });
+
+  test("compliance is recomputed, so new work lowers it", async () => {
+    const done = await publishedModule("assign-a", 2);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("enrollments", {
+        userId: staffId,
+        moduleId: done,
+        status: "completed",
+        progressPercent: 100,
+        assignedAt: Date.now(),
+      });
+      await ctx.db.patch("users", staffId, { compliancePercent: 100 });
+    });
+
+    const extra = await publishedModule("assign-b", 3);
+    await admin().mutation(api.staff.assignModules, { staffId, moduleIds: [extra] });
+
+    // One at 100, one at 0. A person who has finished one of two is not 100%.
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get("users", staffId))!.compliancePercent),
+    ).toBe(50);
+  });
+
+  test("a due date is stored when one is given", async () => {
+    const published = await publishedModule("assign-a", 2);
+    const dueAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    await admin().mutation(api.staff.assignModules, {
+      staffId,
+      moduleIds: [published],
+      dueAt,
+    });
+    expect((await enrollmentsOf(staffId))[0].dueAt).toBe(dueAt);
+  });
+
+  test("the detail read offers the catalogue, minus archived content", async () => {
+    await publishedModule("assign-a", 2);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("modules", {
+        slug: "retired",
+        number: "09",
+        sequence: 9,
+        title: "Retired",
+        description: "d",
+        audience: "a",
+        outcome: "o",
+        category: "Core Policies" as const,
+        durationMinutes: 10,
+        cptdPoints: 1,
+        passMark: 80,
+        format: "Self-paced",
+        publishState: "archived" as const,
+        contentUpdatedAt: Date.now(),
+      });
+    });
+
+    const result = await admin().query(api.staff.detail, { staffId });
+    const slugs = result.catalog.map((row) => row.slug);
+    expect(slugs).toContain("assign-a");
+    // Drafts stay listed; the picker disables them and says why.
+    expect(slugs).toContain("staff-fixture");
+    expect(slugs).not.toContain("retired");
+  });
+});
+
+describe("unassigning a module", () => {
+  let assignedModuleId: Id<"modules">;
+
+  beforeEach(async () => {
+    assignedModuleId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("modules", {
+          slug: "unassign-me",
+          number: "02",
+          sequence: 2,
+          title: "Unassign Me",
+          description: "d",
+          audience: "a",
+          outcome: "o",
+          category: "Core Policies" as const,
+          durationMinutes: 10,
+          cptdPoints: 1,
+          passMark: 80,
+          format: "Self-paced",
+          publishState: "published" as const,
+          contentUpdatedAt: Date.now(),
+        }),
+    );
+    await admin().mutation(api.staff.assignModules, {
+      staffId,
+      moduleIds: [assignedModuleId],
+    });
+  });
+
+  const remaining = async () =>
+    await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("enrollments")
+          .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", staffId))
+          .collect(),
+    );
+
+  test("a staff identity is refused", async () => {
+    await expect(
+      asUser(staffId).mutation(api.staff.unassignModule, {
+        staffId,
+        moduleId: assignedModuleId,
+      }),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+  });
+
+  test("an untouched assignment can be taken back", async () => {
+    await admin().mutation(api.staff.unassignModule, { staffId, moduleId: assignedModuleId });
+    expect(await remaining()).toHaveLength(0);
+  });
+
+  test("one that was never assigned reports so", async () => {
+    await expect(admin().mutation(api.staff.unassignModule, { staffId, moduleId })).rejects.toThrow(
+      /NOT_FOUND|not assigned/i,
+    );
+  });
+
+  test("a started module is training record, and stays", async () => {
+    await t.run(async (ctx) => {
+      const row = (await ctx.db
+        .query("enrollments")
+        .withIndex("by_userId_and_moduleId", (q) =>
+          q.eq("userId", staffId).eq("moduleId", assignedModuleId),
+        )
+        .unique())!;
+      await ctx.db.patch("enrollments", row._id, {
+        status: "in_progress",
+        progressPercent: 40,
+        startedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      admin().mutation(api.staff.unassignModule, { staffId, moduleId: assignedModuleId }),
+    ).rejects.toThrow(/IN_PROGRESS|already started/i);
+    expect(await remaining()).toHaveLength(1);
+  });
+
+  test("lesson progress counts as started, even with the enrollment untouched", async () => {
+    await t.run(async (ctx) => {
+      const lessonId = await ctx.db.insert("lessons", {
+        moduleId: assignedModuleId,
+        slug: "intro",
+        title: "Intro",
+        kind: "reading" as const,
+        order: 1,
+        durationMinutes: 5,
+        summary: "s",
+        publishState: "published" as const,
+        contentUpdatedAt: Date.now(),
+      });
+      await ctx.db.insert("lessonProgress", {
+        userId: staffId,
+        lessonId,
+        moduleId: assignedModuleId,
+        status: "in_progress" as const,
+        lastViewedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      admin().mutation(api.staff.unassignModule, { staffId, moduleId: assignedModuleId }),
+    ).rejects.toThrow(/IN_PROGRESS|already started/i);
+    expect(await remaining()).toHaveLength(1);
   });
 });

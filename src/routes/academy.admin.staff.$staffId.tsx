@@ -1,12 +1,13 @@
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, CheckCircle, Clock, Save, UserX } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle, Clock, Plus, Save, UserX, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { presentAdminStaffDetail } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { AssignModulesDialog } from "@/components/assign-modules-dialog";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -30,6 +31,8 @@ function AdminStaffDetailComponent() {
 
   const updateStaff = useMutation({ mutationFn: useConvexMutation(api.staff.update) });
   const setStatus = useMutation({ mutationFn: useConvexMutation(api.staff.setEmploymentStatus) });
+  const assignModules = useMutation({ mutationFn: useConvexMutation(api.staff.assignModules) });
+  const unassignModule = useMutation({ mutationFn: useConvexMutation(api.staff.unassignModule) });
 
   const [form, setForm] = useState(data.form);
   const [saving, setSaving] = useState(false);
@@ -68,6 +71,38 @@ function AdminStaffDetailComponent() {
       toast.success(next === "active" ? "Account reinstated." : "Account deactivated.");
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "That did not work.");
+    }
+  }
+
+  /**
+   * The dialog rethrows on failure so it stays open with the ticks intact —
+   * see its `submit`. Swallowing the error here would close it on a refusal.
+   */
+  async function assign(moduleIds: string[]) {
+    try {
+      const result = await assignModules.mutateAsync({
+        staffId: id,
+        moduleIds: moduleIds as Array<Id<"modules">>,
+      });
+      // Both numbers, because "3 assigned" when you ticked five is confusing
+      // unless the screen says the other two were already there.
+      const already =
+        result.alreadyAssigned === 0 ? "" : ` ${result.alreadyAssigned} were already assigned.`;
+      toast.success(
+        `${result.assigned} module${result.assigned === 1 ? "" : "s"} assigned.${already}`,
+      );
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not assign those modules.");
+      throw caught;
+    }
+  }
+
+  async function unassign(moduleId: string, title: string) {
+    try {
+      await unassignModule.mutateAsync({ staffId: id, moduleId: moduleId as Id<"modules"> });
+      toast.success(`${title} removed from this tracker.`);
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not remove that module.");
     }
   }
 
@@ -290,10 +325,26 @@ function AdminStaffDetailComponent() {
         </section>
 
         <section className="space-y-4">
-          <h2 className="flex items-center gap-2 text-lg font-black tracking-tight text-foreground">
-            <BookOpen className="h-5 w-5 text-gold" />
-            Module Development Tracker
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-black tracking-tight text-foreground">
+                <BookOpen className="h-5 w-5 text-gold" />
+                Module Development Tracker
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {data.modules.length === 0
+                  ? "Nothing assigned yet. Compliance starts counting once it is."
+                  : `${data.modules.length} module${
+                      data.modules.length === 1 ? "" : "s"
+                    } assigned. Compliance is the average progress across them.`}
+              </p>
+            </div>
+            <AssignModulesDialog modules={data.assignable} staffName={data.name} onAssign={assign}>
+              <button className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep">
+                <Plus className="h-4 w-4" /> Assign modules
+              </button>
+            </AssignModulesDialog>
+          </div>
 
           <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
             <div className="overflow-x-auto">
@@ -315,13 +366,27 @@ function AdminStaffDetailComponent() {
                     <th className="whitespace-nowrap px-6 py-4 font-bold uppercase tracking-wider text-muted-foreground">
                       Last Accessed
                     </th>
+                    <th className="w-px px-6 py-4">
+                      <span className="sr-only">Remove</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {data.modules.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">
-                        No modules are assigned to this staff member yet.
+                      <td colSpan={6} className="px-6 py-12 text-center">
+                        <p className="text-muted-foreground">
+                          No modules are assigned to this staff member yet.
+                        </p>
+                        <AssignModulesDialog
+                          modules={data.assignable}
+                          staffName={data.name}
+                          onAssign={assign}
+                        >
+                          <button className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted">
+                            <Plus className="h-4 w-4" /> Assign their first module
+                          </button>
+                        </AssignModulesDialog>
                       </td>
                     </tr>
                   ) : (
@@ -355,6 +420,22 @@ function AdminStaffDetailComponent() {
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-muted-foreground">
                           {mod.lastAccessedLabel}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right">
+                          {/* Only offered while the enrollment is untouched.
+                              Once somebody has started, the row is their
+                              training record and the server refuses. */}
+                          {mod.canUnassign ? (
+                            <button
+                              onClick={() => unassign(mod.moduleId, mod.moduleTitle)}
+                              title={`Remove ${mod.moduleTitle} from this tracker`}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+                            >
+                              <X className="h-3.5 w-3.5" /> Remove
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Started</span>
+                          )}
                         </td>
                       </tr>
                     ))

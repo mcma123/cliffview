@@ -506,6 +506,7 @@ const ENROLLMENT_LABELS: Record<string, string> = {
 export function presentAdminStaffDetail(data: StaffDetail, now: number) {
   const { user, modules } = data;
   const completed = modules.filter((row) => row.enrollment.status === "completed").length;
+  const assignedIds = new Set(modules.map((row) => row.module._id));
 
   return {
     id: user._id,
@@ -541,6 +542,7 @@ export function presentAdminStaffDetail(data: StaffDetail, now: number) {
     ],
     modules: modules.map(({ enrollment, module }) => ({
       id: enrollment._id,
+      moduleId: module._id,
       moduleTitle: module.title,
       category: module.category,
       status: enrollment.status,
@@ -551,6 +553,31 @@ export function presentAdminStaffDetail(data: StaffDetail, now: number) {
         enrollment.lastAccessedAt === undefined
           ? "Not opened"
           : formatRelativeTime(enrollment.lastAccessedAt, now),
+      // Mirrors what `staff.unassignModule` will allow. The server decides; this
+      // only stops the screen offering a button that is going to be refused.
+      canUnassign:
+        enrollment.status === "not_started" &&
+        enrollment.progressPercent === 0 &&
+        enrollment.score === undefined &&
+        enrollment.startedAt === undefined,
+      href: getAdminModuleHref(module.slug),
+    })),
+    /**
+     * The whole catalogue for the assign picker, already-assigned rows
+     * included and flagged. Drafts are listed but not assignable, because a
+     * module missing from the list with no explanation reads as a bug, whereas
+     * a disabled row with "Draft" on it reads as the instruction it is.
+     */
+    assignable: data.catalog.map((module) => ({
+      id: module._id,
+      number: module.number,
+      title: module.title,
+      category: module.category,
+      durationMinutes: module.durationMinutes,
+      cptdPoints: module.cptdPoints,
+      publishState: module.publishState,
+      assigned: assignedIds.has(module._id),
+      canAssign: module.publishState === "published" && !assignedIds.has(module._id),
       href: getAdminModuleHref(module.slug),
     })),
   };

@@ -250,6 +250,13 @@ export const detail = query({
         module: schema.doc("modules"),
       }),
     ),
+    /**
+     * Every non-archived module, in sequence order, so the assign picker can
+     * offer the whole catalogue without a second round trip. Already-enrolled
+     * modules stay in the list: the presenter marks them assigned rather than
+     * hiding them, because a picker that silently drops rows reads as a bug.
+     */
+    catalog: v.array(schema.doc("modules")),
   }),
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -286,11 +293,17 @@ export const detail = query({
     }
     modules.sort((a, b) => a.module.sequence - b.module.sequence);
 
+    const catalog = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
+
     return {
       user,
       phaseName: phase?.name ?? "Unassigned",
       phases: phaseRows.filter((row) => row.isActive),
       modules,
+      // Archived content is retired, so it is not offered. Drafts are kept in
+      // the list on purpose — `assignModules` refuses them, and the picker
+      // shows why, which beats a module quietly missing from the catalogue.
+      catalog: catalog.filter((row) => row.publishState !== "archived"),
     };
   },
 });
@@ -465,6 +478,184 @@ export const setEmploymentStatus = mutation({
       entityTable: "users",
       entityId: user._id,
       summary: `${user.firstName} ${user.lastName}`,
+    });
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Enrollments
+// ---------------------------------------------------------------------------
+
+/**
+ * Assign modules to a staff member.
+ *
+ * An enrollment row *is* the assignment — there is no separate join, which is
+ * why this is the only way a module reaches somebody's tracker outside the
+ * seed. It is idempotent: re-assigning a module a person already has is a
+ * no-op rather than a second row, so "select all" is safe to press twice and
+ * cannot produce two enrollments the compliance mean would then count twice.
+ *
+ * Only published modules can be assigned. A draft is unfinished content, and
+ * an enrollment in one both puts a person on the hook for work they cannot do
+ * and makes the module undeletable — `modules.remove` refuses once anyone is
+ * enrolled. Publish it first; the picker says so.
+ */
+export const assignModules = mutation({
+  args: {
+    staffId: v.id("users"),
+    moduleIds: v.array(v.id("modules")),
+    /** Optional deadline, stored on each new enrollment. */
+    dueAt: v.optional(v.number()),
+  },
+  returns: v.object({
+    /** New enrollment rows written. */
+    assigned: v.number(),
+    /** Modules the person already had, left untouched. */
+    alreadyAssigned: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    const user = await staffOrThrow(ctx, args.staffId);
+
+    // Duplicates within one call would otherwise race past the existence check
+    // below and write the same module twice.
+    const moduleIds = [...new Set(args.moduleIds)];
+    if (moduleIds.length === 0) {
+      throw new ConvexError({ code: "INVALID", message: "Pick at least one module to assign." });
+    }
+    if (moduleIds.length > MAX_MODULES) {
+      throw new ConvexError({
+        code: "INVALID",
+        message: `You cannot assign more than ${MAX_MODULES} modules at once.`,
+      });
+    }
+
+    const assignedAt = Date.now();
+    let assigned = 0;
+    let alreadyAssigned = 0;
+
+    for (const moduleId of moduleIds) {
+      const module = await ctx.db.get("modules", moduleId);
+      if (module === null) {
+        throw new ConvexError({ code: "INVALID", message: "That module no longer exists." });
+      }
+      if (module.publishState !== "published") {
+        throw new ConvexError({
+          code: "NOT_PUBLISHED",
+          message: `"${module.title}" is not published yet, so it cannot be assigned. Publish it first.`,
+        });
+      }
+
+      const existing = await ctx.db
+        .query("enrollments")
+        .withIndex("by_userId_and_moduleId", (q) =>
+          q.eq("userId", user._id).eq("moduleId", module._id),
+        )
+        .unique();
+      if (existing !== null) {
+        alreadyAssigned += 1;
+        continue;
+      }
+
+      await ctx.db.insert("enrollments", {
+        userId: user._id,
+        moduleId: module._id,
+        // Earned, never assigned — the same rule the profile form follows.
+        // A brand-new assignment is genuinely at zero.
+        status: "not_started",
+        progressPercent: 0,
+        assignedAt,
+        ...(args.dueAt === undefined ? {} : { dueAt: args.dueAt }),
+      });
+      assigned += 1;
+    }
+
+    // Assigning work lowers compliance, because compliance is the mean of what
+    // somebody has been given. That is the honest number: a person with one
+    // finished module out of one is not as compliant as the school needs once
+    // eight more land on them.
+    await recomputeCompliance(ctx, user._id);
+
+    await recordAudit(ctx, {
+      actor,
+      action: "staff.assignModules",
+      entityTable: "users",
+      entityId: user._id,
+      summary: `${user.firstName} ${user.lastName}: ${assigned} assigned, ${alreadyAssigned} already had`,
+    });
+
+    return { assigned, alreadyAssigned };
+  },
+});
+
+/**
+ * Remove an assignment.
+ *
+ * Only for one nobody has touched. Once a person has opened a module the
+ * enrollment is their training record, and deleting it would erase a score and
+ * a completion the school may have to produce later — the same reason
+ * `setEmploymentStatus` deactivates rather than deletes, and the same reason
+ * `modules.remove` refuses a module with enrollments. Undoing a mis-click is
+ * what this is for.
+ */
+export const unassignModule = mutation({
+  args: { staffId: v.id("users"), moduleId: v.id("modules") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    const user = await staffOrThrow(ctx, args.staffId);
+
+    const enrollment = await ctx.db
+      .query("enrollments")
+      .withIndex("by_userId_and_moduleId", (q) =>
+        q.eq("userId", user._id).eq("moduleId", args.moduleId),
+      )
+      .unique();
+    if (enrollment === null) {
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "That module is not assigned to this staff member.",
+      });
+    }
+
+    const untouched =
+      enrollment.status === "not_started" &&
+      enrollment.progressPercent === 0 &&
+      enrollment.score === undefined &&
+      enrollment.startedAt === undefined;
+
+    // Lesson progress is its own table, so an enrollment can read as untouched
+    // while the person has in fact opened lessons. Checking both is what keeps
+    // "untouched" true rather than merely plausible.
+    const touchedLessons =
+      untouched &&
+      (
+        await ctx.db
+          .query("lessonProgress")
+          .withIndex("by_userId_and_moduleId", (q) =>
+            q.eq("userId", user._id).eq("moduleId", args.moduleId),
+          )
+          .take(1)
+      ).length > 0;
+
+    if (!untouched || touchedLessons) {
+      throw new ConvexError({
+        code: "IN_PROGRESS",
+        message:
+          "This staff member has already started the module, so the assignment is part of their training record and cannot be removed.",
+      });
+    }
+
+    await ctx.db.delete("enrollments", enrollment._id);
+    await recomputeCompliance(ctx, user._id);
+
+    await recordAudit(ctx, {
+      actor,
+      action: "staff.unassignModule",
+      entityTable: "users",
+      entityId: user._id,
+      summary: `${user.firstName} ${user.lastName}: removed ${args.moduleId}`,
     });
     return null;
   },
