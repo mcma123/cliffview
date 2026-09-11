@@ -42,7 +42,7 @@ export const resend = new Resend(components.resend, {
  * verified domain without a code change.
  */
 export const INVITATION_FROM =
-  process.env.INVITATION_FROM_EMAIL ?? "Cliffview Academy <no-reply@cyphersoftai.com>";
+  process.env.INVITATION_FROM_EMAIL ?? "Cliffview Academy <no-reply@cliffview.cyphersoftai.com>";
 
 /** Why an invitation could not be sent. None of these may lose the staff row. */
 export type InvitationBlock = "no-api-key" | "no-site-url" | "undeliverable-domain";
