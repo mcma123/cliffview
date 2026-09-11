@@ -109,8 +109,8 @@ export function AddStaffDialog({
             Add a staff member
           </DialogTitle>
           <DialogDescription className="mt-2 text-primary-foreground/80">
-            Creates the profile. It does not create a password — the staff member sets that up
-            themselves at first sign-in, using this email address.
+            Creates the profile and emails them an invitation. They set their own password from the
+            link in it — nobody here ever knows it. The link works once and lasts seven days.
           </DialogDescription>
         </DialogHeader>
 
@@ -163,7 +163,7 @@ export function AddStaffDialog({
                 required
                 autoCapitalize="none"
                 spellCheck={false}
-                placeholder="name.surname@cliffview.example"
+                placeholder="name.surname@school.co.za"
                 className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
               />
             </label>
@@ -201,7 +201,7 @@ export function AddStaffDialog({
             </label>
             <label className="block space-y-2">
               <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                Preferred name
+                Username / preferred name
               </span>
               <input
                 value={form.preferredName}
@@ -209,6 +209,9 @@ export function AddStaffDialog({
                 placeholder="Optional"
                 className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
               />
+              <span className="block text-xs text-muted-foreground">
+                What the app calls them. They still sign in with the email address above.
+              </span>
             </label>
           </div>
 
@@ -234,8 +237,8 @@ export function AddStaffDialog({
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
-              An SMT admin still has to set up their own password before they can sign in, and an
-              operator has to open that window for them.
+              Staff are invited by email. SMT admins are not — an operator opens a claim window for
+              them instead, because a seven-day link to an admin account is a way in.
             </p>
           </fieldset>
 

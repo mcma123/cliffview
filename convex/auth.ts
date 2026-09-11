@@ -6,6 +6,7 @@ import { internalMutation, internalQuery, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { getActor } from "./lib/authz";
+import { consumeInviteOrThrow } from "./lib/invites";
 
 /**
  * Convex Auth wiring: email + password.
@@ -34,7 +35,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
      * profile instead of inserting a user, which is what lets `users` keep its
      * required fields and stay the single list of people in the school.
      *
-     * Three refusals, in order:
+     * Four refusals, in order:
      *
      * 1. No matching profile -> nobody can self-register into the school. A
      *    staff member must be seeded or created by an admin first.
@@ -43,6 +44,19 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
      *    provisioned deliberately, never by whoever gets to the address first.
      *    There is no email verification configured, so without this an admin
      *    address is a takeover path.
+     * 4. Ordinary staff without a valid invitation -> the same reasoning as (3),
+     *    finally applied to teachers. Until this existed a `staff` row had no
+     *    window and no token at all, so whoever first submitted a sign-up for a
+     *    guessable school address became that teacher.
+     *
+     * The invitation arrives as `profile.inviteTokenHash`, put there by
+     * `invites.accept`. A client cannot put it there: `Password` below is
+     * passed UNCALLED on purpose, so the provider's own `defaultProfile`
+     * constructs `{ email }` and discards every other submitted field, and
+     * `auth:store` is an internal mutation. Configuring `Password({ profile })`
+     * would hand a caller a way to inject this key, and would also expose
+     * `emailVerified` / `phoneVerified`, which Convex Auth patches straight
+     * onto `authAccounts`. Leave it uncalled.
      */
     async createOrUpdateUser(genericCtx, args): Promise<Id<"users">> {
       // An existing link always wins: this is a returning sign-in, and the
@@ -56,7 +70,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       // full type safety for the rest of the function.
       const ctx = genericCtx as unknown as MutationCtx;
 
-      const email = args.profile.email;
+      // Read defensively: the library types this as an opaque profile.
+      const profile = args.profile as { email?: unknown; inviteTokenHash?: unknown };
+
+      const email = profile.email;
       if (typeof email !== "string" || email.length === 0) {
         throw new ConvexError({
           code: "NO_EMAIL",
@@ -96,7 +113,22 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         }
         // Single-use: close the window as soon as it is used.
         await ctx.db.patch("users", user._id, { adminClaimAllowedUntil: undefined });
+        return user._id;
       }
+
+      const tokenHash =
+        typeof profile.inviteTokenHash === "string" ? profile.inviteTokenHash : null;
+      if (tokenHash === null) {
+        throw new ConvexError({
+          code: "INVITE_REQUIRED",
+          message:
+            "Use the link in your invitation email to set your password. Ask an administrator to send you one if you have not received it.",
+        });
+      }
+      // Spends the invitation in THIS transaction, the same one that inserts
+      // the `authAccounts` row a few frames up the stack. That is what makes
+      // single-use actually single-use rather than merely likely.
+      await consumeInviteOrThrow(ctx, user, tokenHash);
 
       return user._id;
     },

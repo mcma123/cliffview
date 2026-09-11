@@ -109,7 +109,11 @@ export default defineSchema({
      * Admin profiles never self-claim: without email verification configured,
      * anyone who knew an admin address could otherwise become that admin. An
      * operator opens a short window with `internal.auth.allowAdminClaim`, and
-     * the claim clears it. Staff rows need none of this.
+     * the claim clears it.
+     *
+     * Staff rows use `staffInvites` instead: a mailed, hashed, single-use
+     * token rather than a bare time window, because a teacher is invited by
+     * email while an operator provisions an admin out of band.
      */
     adminClaimAllowedUntil: v.optional(v.number()),
 
@@ -127,6 +131,40 @@ export default defineSchema({
     .index("by_phaseId_and_employmentStatus", ["phaseId", "employmentStatus"])
     .index("by_accessRole", ["accessRole"])
     .index("by_employmentStatus_and_xpTotal", ["employmentStatus", "xpTotal"]),
+
+  /**
+   * Invitations to set a first password.
+   *
+   * A table rather than fields on `users` because an invitation is an event
+   * with a lifetime — issued, superseded, spent exactly once — and not a
+   * property of a person. Putting it on `users` would also park a live
+   * credential on the row that every admin directory read already returns.
+   *
+   * Only the SHA-256 of the token is stored. The raw value exists in exactly
+   * two places, the sent email and the invitee's URL bar, so a dump of this
+   * table yields nothing redeemable. Convex Auth stores its own verification
+   * codes the same way.
+   */
+  staffInvites: defineTable({
+    userId: v.id("users"),
+    /**
+     * The address the link was posted to, frozen at issue time. Not a
+     * duplicate of `users.email` but a fact about a delivery: it is what makes
+     * correcting a mistyped address invalidate the old link automatically,
+     * with no second rule for `staff.update` to remember.
+     */
+    email: v.string(),
+    /** Lowercase hex SHA-256 of the raw token. Never the token itself. */
+    tokenHash: v.string(),
+    expiresAt: v.number(),
+    invitedBy: v.id("users"),
+    /** Stamped in the same transaction that inserts the credential. */
+    consumedAt: v.optional(v.number()),
+    /** Stamped when a newer invitation supersedes this one. */
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_userId", ["userId"]),
 
   // ---------------------------------------------------------------------------
   // Content

@@ -1,7 +1,18 @@
-import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, CheckCircle, Clock, Plus, Save, UserX, X } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  CheckCircle,
+  Clock,
+  Copy,
+  Mail,
+  Plus,
+  Save,
+  UserX,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +44,7 @@ function AdminStaffDetailComponent() {
   const setStatus = useMutation({ mutationFn: useConvexMutation(api.staff.setEmploymentStatus) });
   const assignModules = useMutation({ mutationFn: useConvexMutation(api.staff.assignModules) });
   const unassignModule = useMutation({ mutationFn: useConvexMutation(api.staff.unassignModule) });
+  const resendInvite = useMutation({ mutationFn: useConvexAction(api.invites.resend) });
 
   const [form, setForm] = useState(data.form);
   const [saving, setSaving] = useState(false);
@@ -103,6 +115,41 @@ function AdminStaffDetailComponent() {
       toast.success(`${title} removed from this tracker.`);
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "Could not remove that module.");
+    }
+  }
+
+  /**
+   * Re-send the invitation, and offer the link for copying.
+   *
+   * The link matters as much as the email: every seeded staff member is on
+   * `cliffview.example`, which can never receive mail, and a real address can
+   * still bounce. Copying it is the escape hatch that keeps somebody from
+   * being permanently locked out by a mail problem.
+   */
+  async function sendInvite() {
+    try {
+      const result = await resendInvite.mutateAsync({ staffId: id });
+      if (result.link === null) {
+        toast.warning(`No invitation could be sent to ${result.email}.`, {
+          description: "The deployment has no SITE_URL configured, so no link could be built.",
+        });
+        return;
+      }
+      const link = result.link;
+      toast.success(`Invitation sent to ${result.email}.`, {
+        description: "Valid for 7 days, and it works once.",
+        action: {
+          label: "Copy link",
+          onClick: () => {
+            void navigator.clipboard
+              .writeText(link)
+              .then(() => toast.success("Invitation link copied."))
+              .catch(() => toast.error("Could not copy. Check clipboard permissions."));
+          },
+        },
+      });
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not send that invitation.");
     }
   }
 
@@ -298,6 +345,36 @@ function AdminStaffDetailComponent() {
                 className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
               />
             </label>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Sign-in access</p>
+              <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                {data.invite.statusLabel}.{" "}
+                {data.invite.hasPassword
+                  ? "They set it themselves from an invitation link — nobody here can see it."
+                  : "A teacher can only set a first password by following an invitation link, so until one is redeemed they cannot sign in."}
+              </p>
+            </div>
+            {data.invite.canInvite ? (
+              <button
+                onClick={sendInvite}
+                disabled={resendInvite.isPending}
+                className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                {resendInvite.isPending ? (
+                  <>
+                    <Mail className="h-4 w-4" /> Sending…
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4" />{" "}
+                    {data.invite.isLive ? "Resend invitation" : "Send invitation"}
+                  </>
+                )}
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">

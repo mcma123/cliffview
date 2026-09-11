@@ -1,5 +1,6 @@
 import { defineApp } from "convex/server";
 import r2 from "@convex-dev/r2/convex.config";
+import resend from "@convex-dev/resend/convex.config.js";
 
 /**
  * Component registration.
@@ -14,8 +15,17 @@ import r2 from "@convex-dev/r2/convex.config";
  *
  * R2 depends on `@convex-dev/action-retrier` and registers it itself, so it
  * must not be listed here as well.
+ *
+ * Resend does the same, three times over: it registers a `rateLimiter` and two
+ * `workpool` instances (`emailWorkpool`, `callbackWorkpool`) of its own. None
+ * of them belongs here either — but every one has to be registered by hand in
+ * the test harness, because at runtime each is addressed by its nested path
+ * and `@convex-dev/resend/test` registers only the parent. That is the
+ * `r2/actionRetrier` lesson again, and it is why `newTest()` lists four
+ * registrations for what looks like one component.
  */
 const app = defineApp();
 app.use(r2);
+app.use(resend);
 
 export default app;

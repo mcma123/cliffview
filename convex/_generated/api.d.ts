@@ -12,10 +12,14 @@ import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
+import type * as invites from "../invites.js";
 import type * as lessons from "../lessons.js";
 import type * as lib_audit from "../lib/audit.js";
 import type * as lib_authz from "../lib/authz.js";
 import type * as lib_counts from "../lib/counts.js";
+import type * as lib_email from "../lib/email.js";
+import type * as lib_invitationEmail from "../lib/invitationEmail.js";
+import type * as lib_invites from "../lib/invites.js";
 import type * as lib_ordering from "../lib/ordering.js";
 import type * as lib_storage from "../lib/storage.js";
 import type * as lib_time from "../lib/time.js";
@@ -37,10 +41,14 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   dashboard: typeof dashboard;
   http: typeof http;
+  invites: typeof invites;
   lessons: typeof lessons;
   "lib/audit": typeof lib_audit;
   "lib/authz": typeof lib_authz;
   "lib/counts": typeof lib_counts;
+  "lib/email": typeof lib_email;
+  "lib/invitationEmail": typeof lib_invitationEmail;
+  "lib/invites": typeof lib_invites;
   "lib/ordering": typeof lib_ordering;
   "lib/storage": typeof lib_storage;
   "lib/time": typeof lib_time;
@@ -80,4 +88,5 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
+  resend: import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">;
 };

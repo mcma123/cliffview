@@ -508,6 +508,19 @@ export function presentAdminStaffDetail(data: StaffDetail, now: number) {
   const completed = modules.filter((row) => row.enrollment.status === "completed").length;
   const assignedIds = new Set(modules.map((row) => row.module._id));
 
+  // Derived here, never stored: the backend returns `hasPassword` and a raw
+  // expiry, and `now` arrives from the route loader, because a Convex query
+  // may not read the clock.
+  const { hasPassword, inviteExpiresAt, invitable } = data.credential;
+  const inviteLive = inviteExpiresAt !== null && inviteExpiresAt > now;
+  const inviteStatusLabel = hasPassword
+    ? "Password set"
+    : inviteLive
+      ? `Invitation sent — expires ${formatRelativeTime(inviteExpiresAt, now).replace(" ago", " from now")}`
+      : inviteExpiresAt === null
+        ? "No invitation sent yet"
+        : "Invitation expired";
+
   return {
     id: user._id,
     name: formatStaffName(user),
@@ -534,6 +547,13 @@ export function presentAdminStaffDetail(data: StaffDetail, now: number) {
       phaseId: user.phaseId,
     },
     phaseOptions: data.phases.map((phase) => ({ id: phase._id, name: phase.name })),
+    invite: {
+      hasPassword,
+      /** Whether the server will accept a resend, so the UI does not offer a doomed button. */
+      canInvite: invitable,
+      isLive: inviteLive,
+      statusLabel: inviteStatusLabel,
+    },
     stats: [
       { label: "Modules completed", value: `${completed} / ${modules.length}` },
       { label: "CPTD points", value: `${user.cptdPoints} pts` },

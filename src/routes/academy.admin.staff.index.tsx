@@ -84,7 +84,12 @@ function AdminStaffIndexComponent() {
                       ? {}
                       : { preferredName: input.preferredName }),
                   });
-                  toast.success(`${input.firstName} ${input.lastName} added.`);
+                  toast.success(`${input.firstName} ${input.lastName} added.`, {
+                    description:
+                      input.accessRole === "staff"
+                        ? `An invitation is on its way to ${input.email}.`
+                        : "Admins are not invited by email — an operator opens a claim window for them.",
+                  });
                 } catch (caught) {
                   toast.error(
                     caught instanceof Error ? caught.message : "Could not create the profile.",

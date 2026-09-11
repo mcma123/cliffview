@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 import actionRetrier from "@convex-dev/action-retrier/test";
 import r2Component from "@convex-dev/r2/test";
+import rateLimiter from "@convex-dev/rate-limiter/test";
+import resendComponent from "@convex-dev/resend/test";
+import workpool from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, test } from "vitest";
 
@@ -29,6 +32,15 @@ function newTest() {
   const t = convexTest(schema, modules);
   r2Component.register(t);
   actionRetrier.register(t, "r2/actionRetrier");
+  // Same lesson, three more times. Resend nests a rate limiter and two
+  // workpools, and at runtime each is addressed by its path under the
+  // parent, while `@convex-dev/resend/test` registers only the parent.
+  // Without these, any mutation that queues an email dies on an
+  // unregistered component.
+  resendComponent.register(t);
+  rateLimiter.register(t, "resend/rateLimiter");
+  workpool.register(t, "resend/emailWorkpool");
+  workpool.register(t, "resend/callbackWorkpool");
   return t;
 }
 

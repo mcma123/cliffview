@@ -13,10 +13,11 @@ function SignInPage() {
   const [show, setShow] = useState(false);
   const { signIn } = useAuthActions();
   const navigate = useNavigate();
-  // "signUp" is the first-time claim of a pre-provisioned profile; "signIn" is
-  // every visit after. Convex Auth refuses a signUp whose email is not already
-  // a staff row, so this toggle cannot create a new person.
-  const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
+  // Sign-in only. There used to be a "first time here" toggle that submitted
+  // `flow: "signUp"`, and it was a real account-takeover path: a staff row had
+  // no claim window and no token, so whoever submitted it first for a
+  // guessable school address set that teacher's password. A first password is
+  // now set exclusively by redeeming an invitation at /academy/invite.
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,14 +26,14 @@ function SignInPage() {
     setError(null);
     setPending(true);
     const formData = new FormData(event.currentTarget);
-    formData.set("flow", flow);
+    formData.set("flow", "signIn");
     try {
       await signIn("password", formData);
       await navigate({ to: "/academy/dashboard" });
     } catch (caught) {
       // Convex Auth surfaces our ConvexError messages from
-      // `createOrUpdateUser` here — the not-provisioned, inactive and
-      // admin-claim-closed refusals.
+      // `createOrUpdateUser` here — the not-provisioned, inactive,
+      // admin-claim-closed and invite-required refusals.
       const message =
         caught instanceof Error && caught.message.length > 0
           ? caught.message
@@ -106,7 +107,7 @@ function SignInPage() {
                   name="password"
                   required
                   minLength={8}
-                  autoComplete={flow === "signIn" ? "current-password" : "new-password"}
+                  autoComplete="current-password"
                   className="flex-1 bg-transparent text-sm text-foreground outline-none"
                 />
                 <button type="button" onClick={() => setShow((v) => !v)}>
@@ -140,23 +141,12 @@ function SignInPage() {
               disabled={pending}
               className="group flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform hover:scale-[1.01] hover:bg-primary-deep disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {pending ? "Signing in…" : flow === "signIn" ? "Sign In" : "Create my password"}
+              {pending ? "Signing in…" : "Sign In"}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFlow((f) => (f === "signIn" ? "signUp" : "signIn"));
-                setError(null);
-              }}
-              className="w-full text-center text-xs font-semibold text-gold hover:underline"
-            >
-              {flow === "signIn"
-                ? "First time here? Set up your password"
-                : "Already set up? Sign in instead"}
-            </button>
             <p className="text-center text-xs italic text-muted-foreground">
-              Only staff already registered by the school can sign in.
+              New here? Your invitation email has the link that sets your password. Ask an
+              administrator to send one if you have not received it.
             </p>
           </form>
         </div>

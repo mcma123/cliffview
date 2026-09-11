@@ -14,6 +14,7 @@ import { Route as AcademySignInRouteImport } from './routes/academy.sign-in'
 import { Route as AcademyProfileRouteImport } from './routes/academy.profile'
 import { Route as AcademyModulesRouteImport } from './routes/academy.modules'
 import { Route as AcademyLeaderboardRouteImport } from './routes/academy.leaderboard'
+import { Route as AcademyInviteRouteImport } from './routes/academy.invite'
 import { Route as AcademyDashboardRouteImport } from './routes/academy.dashboard'
 import { Route as AcademyAdminRouteImport } from './routes/academy.admin'
 import { Route as AcademyModulesIndexRouteImport } from './routes/academy.modules.index'
@@ -61,6 +62,11 @@ const AcademyModulesRoute = AcademyModulesRouteImport.update({
 const AcademyLeaderboardRoute = AcademyLeaderboardRouteImport.update({
   id: '/academy/leaderboard',
   path: '/academy/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcademyInviteRoute = AcademyInviteRouteImport.update({
+  id: '/academy/invite',
+  path: '/academy/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcademyDashboardRoute = AcademyDashboardRouteImport.update({
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/academy/admin': typeof AcademyAdminRouteWithChildren
   '/academy/dashboard': typeof AcademyDashboardRoute
+  '/academy/invite': typeof AcademyInviteRoute
   '/academy/leaderboard': typeof AcademyLeaderboardRoute
   '/academy/modules': typeof AcademyModulesRouteWithChildren
   '/academy/profile': typeof AcademyProfileRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/academy/dashboard': typeof AcademyDashboardRoute
+  '/academy/invite': typeof AcademyInviteRoute
   '/academy/leaderboard': typeof AcademyLeaderboardRoute
   '/academy/profile': typeof AcademyProfileRoute
   '/academy/sign-in': typeof AcademySignInRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/academy/admin': typeof AcademyAdminRouteWithChildren
   '/academy/dashboard': typeof AcademyDashboardRoute
+  '/academy/invite': typeof AcademyInviteRoute
   '/academy/leaderboard': typeof AcademyLeaderboardRoute
   '/academy/modules': typeof AcademyModulesRouteWithChildren
   '/academy/profile': typeof AcademyProfileRoute
@@ -284,6 +293,7 @@ export interface FileRouteTypes {
     | '/'
     | '/academy/admin'
     | '/academy/dashboard'
+    | '/academy/invite'
     | '/academy/leaderboard'
     | '/academy/modules'
     | '/academy/profile'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/academy/dashboard'
+    | '/academy/invite'
     | '/academy/leaderboard'
     | '/academy/profile'
     | '/academy/sign-in'
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | '/'
     | '/academy/admin'
     | '/academy/dashboard'
+    | '/academy/invite'
     | '/academy/leaderboard'
     | '/academy/modules'
     | '/academy/profile'
@@ -369,6 +381,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcademyAdminRoute: typeof AcademyAdminRouteWithChildren
   AcademyDashboardRoute: typeof AcademyDashboardRoute
+  AcademyInviteRoute: typeof AcademyInviteRoute
   AcademyLeaderboardRoute: typeof AcademyLeaderboardRoute
   AcademyModulesRoute: typeof AcademyModulesRouteWithChildren
   AcademyProfileRoute: typeof AcademyProfileRoute
@@ -411,6 +424,13 @@ declare module '@tanstack/react-router' {
       path: '/academy/leaderboard'
       fullPath: '/academy/leaderboard'
       preLoaderRoute: typeof AcademyLeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/academy/invite': {
+      id: '/academy/invite'
+      path: '/academy/invite'
+      fullPath: '/academy/invite'
+      preLoaderRoute: typeof AcademyInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/academy/dashboard': {
@@ -692,6 +712,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcademyAdminRoute: AcademyAdminRouteWithChildren,
   AcademyDashboardRoute: AcademyDashboardRoute,
+  AcademyInviteRoute: AcademyInviteRoute,
   AcademyLeaderboardRoute: AcademyLeaderboardRoute,
   AcademyModulesRoute: AcademyModulesRouteWithChildren,
   AcademyProfileRoute: AcademyProfileRoute,

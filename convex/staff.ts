@@ -3,9 +3,11 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { recordAudit } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
 import { MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
+import { hasPasswordAccount } from "./invites";
 import schema from "./schema";
 import { accessRole, employmentStatus } from "./validators";
 
@@ -251,6 +253,18 @@ export const detail = query({
       }),
     ),
     /**
+     * Whether this person can sign in yet, and the state of their invitation.
+     *
+     * Derived, never stored: `hasPassword` is a lookup in `authAccounts` and
+     * the label is computed in the presenter from `inviteExpiresAt` and the
+     * route's `now`, because a query may not read the clock.
+     */
+    credential: v.object({
+      hasPassword: v.boolean(),
+      inviteExpiresAt: v.union(v.number(), v.null()),
+      invitable: v.boolean(),
+    }),
+    /**
      * Every non-archived module, in sequence order, so the assign picker can
      * offer the whole catalogue without a second round trip. Already-enrolled
      * modules stay in the list: the presenter marks them assigned rather than
@@ -295,7 +309,26 @@ export const detail = query({
 
     const catalog = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
 
+    const hasPassword = await hasPasswordAccount(ctx, user._id);
+    const liveInvite = await ctx.db
+      .query("staffInvites")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .take(MAX_MODULES);
+    // The newest invitation that has been neither spent nor superseded. Its
+    // expiry is returned raw so the presenter can decide what to call it.
+    const pending = liveInvite
+      .filter((row) => row.consumedAt === undefined && row.revokedAt === undefined)
+      .sort((a, b) => b.expiresAt - a.expiresAt)[0];
+
     return {
+      credential: {
+        hasPassword,
+        inviteExpiresAt: pending?.expiresAt ?? null,
+        // Mirrors what `invites.prepare` will allow, so the screen does not
+        // offer a button the server is about to refuse.
+        invitable:
+          !hasPassword && user.accessRole === "staff" && user.employmentStatus === "active",
+      },
       user,
       phaseName: phase?.name ?? "Unassigned",
       phases: phaseRows.filter((row) => row.isActive),
@@ -313,13 +346,24 @@ export const detail = query({
 // ---------------------------------------------------------------------------
 
 /**
- * Create a staff profile.
+ * Create a staff profile and invite them.
  *
- * This does **not** create a login. `users` is both the staff list and Convex
- * Auth's user table, and `createOrUpdateUser` links an account to a row that
- * already exists — so this row is what later lets that person sign up at all,
- * and until they do they simply have no credentials. That is the whole reason
- * nobody can self-register into the school.
+ * This still does **not** create a login. `users` is both the staff list and
+ * Convex Auth's user table, and `createOrUpdateUser` links an account to a row
+ * that already exists — so this row is what later lets that person sign up at
+ * all, and until they redeem an invitation they simply have no credentials.
+ * That is the whole reason nobody can self-register into the school.
+ *
+ * What is new is that the invitation is now the *only* way a teacher gets a
+ * password, so creating one has to send it. Delivery is scheduled rather than
+ * inlined: `ctx.scheduler.runAfter` is transactional, so a rolled-back create
+ * cancels the send and nobody is emailed about a profile that does not exist,
+ * while a mail outage cannot roll back the profile. Hashing also needs an
+ * action, which a mutation cannot be.
+ *
+ * Admins are deliberately not invited by email — `smt_admin` still claims its
+ * password through the operator window in `internal.auth.allowAdminClaim`,
+ * because a seven-day emailed link to an admin row is a takeover path.
  */
 export const create = mutation({
   args: {
@@ -361,6 +405,16 @@ export const create = mutation({
       xpTotal: 0,
       compliancePercent: 0,
     });
+
+    if (args.accessRole === "staff") {
+      await ctx.scheduler.runAfter(0, internal.invites.deliver, {
+        userId: staffId,
+        invitedBy: actor.userId,
+        email,
+        firstName: clean.firstName!,
+        invitedByName: `${actor.user.firstName} ${actor.user.lastName}`,
+      });
+    }
 
     await recordAudit(ctx, {
       actor,

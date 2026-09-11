@@ -24,6 +24,7 @@
     "@convex-dev/auth": "^0.0.95",
     "@convex-dev/r2": "^0.10.2",
     "@convex-dev/react-query": "^0.1.0",
+    "@convex-dev/resend": "^0.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
