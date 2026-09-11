@@ -1,0 +1,26 @@
+# Keep the build context small and, more importantly, keep secrets out of it.
+# `.env.local` holds the R2 credentials and the Dokploy API key; the build has
+# no use for them and anything copied in is recoverable from the image.
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+.output
+.nitro
+.vinxi
+.tanstack
+
+backups
+.git
+.github
+.claude
+.vscode
+.idea
+
+*.log
+npm-debug.log*
+coverage
+.DS_Store
+Thumbs.db
