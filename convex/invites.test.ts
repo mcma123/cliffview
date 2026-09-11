@@ -189,6 +189,72 @@ describe("an invitation is required to set a first password", () => {
   });
 });
 
+describe("email case and whitespace never lock somebody out", () => {
+  /**
+   * The bug this pins: `invites.accept` stores the account under the
+   * normalised address from `users`, but Convex Auth uses the RAW submitted
+   * string as `providerAccountId`. A phone keyboard capitalising the first
+   * letter therefore produced `InvalidAccountId` — an opaque server error, on
+   * a correct password, with no way for the person to work out why.
+   */
+  const signInAs = (email: string, password: string) =>
+    t.action(api.auth.signIn, {
+      provider: "password",
+      params: { email, password, flow: "signIn" },
+    });
+
+  test("the account is stored under the normalised address", async () => {
+    const token = await issueInvite(teacherId, TEACHER_EMAIL);
+    await t.action(api.invites.accept, {
+      token,
+      password: GOOD_PASSWORD,
+      confirmPassword: GOOD_PASSWORD,
+    });
+    const accounts = await passwordAccounts(teacherId);
+    expect(accounts[0].providerAccountId).toBe(TEACHER_EMAIL);
+  });
+
+  test.each([
+    ["as typed", TEACHER_EMAIL],
+    ["first letter capitalised, as a phone keyboard does", "Nomsa.khumalo@cliffview.test"],
+    ["shouting", TEACHER_EMAIL.toUpperCase()],
+    ["with padding from a copy-paste", `  ${TEACHER_EMAIL}  `],
+  ])("signs in %s", async (_label, typed) => {
+    const token = await issueInvite(teacherId, TEACHER_EMAIL);
+    await t.action(api.invites.accept, {
+      token,
+      password: GOOD_PASSWORD,
+      confirmPassword: GOOD_PASSWORD,
+    });
+    await expect(signInAs(typed, GOOD_PASSWORD)).resolves.toBeDefined();
+  });
+
+  test("a wrong password is still refused, whatever the casing", async () => {
+    const token = await issueInvite(teacherId, TEACHER_EMAIL);
+    await t.action(api.invites.accept, {
+      token,
+      password: GOOD_PASSWORD,
+      confirmPassword: GOOD_PASSWORD,
+    });
+    await expect(signInAs(TEACHER_EMAIL.toUpperCase(), "not the password")).rejects.toThrow();
+  });
+
+  test("a personal address works exactly like a school one", async () => {
+    // The reported symptom blamed the gmail address. There is no domain rule
+    // anywhere in sign-in, and this pins that there never quietly becomes one.
+    await t.run(async (ctx) => {
+      await ctx.db.patch("users", teacherId, { email: "someone.personal@gmail.com" });
+    });
+    const token = await issueInvite(teacherId, "someone.personal@gmail.com");
+    await t.action(api.invites.accept, {
+      token,
+      password: GOOD_PASSWORD,
+      confirmPassword: GOOD_PASSWORD,
+    });
+    await expect(signInAs("Someone.Personal@Gmail.com", GOOD_PASSWORD)).resolves.toBeDefined();
+  });
+});
+
 describe("a token that should not work, does not", () => {
   test("a tampered token is refused", async () => {
     const token = await issueInvite(teacherId, TEACHER_EMAIL);

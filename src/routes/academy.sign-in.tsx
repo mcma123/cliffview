@@ -34,11 +34,18 @@ function SignInPage() {
       // Convex Auth surfaces our ConvexError messages from
       // `createOrUpdateUser` here — the not-provisioned, inactive,
       // admin-claim-closed and invite-required refusals.
-      const message =
-        caught instanceof Error && caught.message.length > 0
-          ? caught.message
-          : "We could not sign you in. Check your email and password and try again.";
-      setError(message.replace(/^\[.*?\]\s*/, ""));
+      const raw = caught instanceof Error ? caught.message : "";
+      // Convex Auth throws plain Errors for a bad credential, which arrive as
+      // "[Request ID: ...] Server Error" — true, and useless to the person
+      // trying to sign in. Only our own ConvexError messages are worth showing.
+      const opaque =
+        raw.length === 0 ||
+        /Server Error|InvalidAccountId|InvalidSecret|Invalid credentials/i.test(raw);
+      setError(
+        opaque
+          ? "That email and password did not match. If you have not set a password yet, use the link in your invitation email."
+          : raw.replace(/^\[.*?\]\s*/, ""),
+      );
     } finally {
       setPending(false);
     }
@@ -86,12 +93,21 @@ function SignInPage() {
               </label>
               <div className="mt-2 flex items-center gap-3 rounded-xl border border-input bg-muted/40 px-4 py-3 focus-within:border-primary">
                 <Mail className="h-4 w-4 text-muted-foreground" />
+                {/*
+                  A phone keyboard capitalises the first letter by default and
+                  the stored account id is lowercase, which used to fail as an
+                  opaque InvalidAccountId. The server normalises too; this just
+                  stops the field looking wrong while you type.
+                */}
                 <input
                   type="email"
                   name="email"
                   required
                   autoComplete="email"
-                  placeholder="you@cliffview.example"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@example.com"
                   className="flex-1 bg-transparent text-sm text-foreground outline-none"
                 />
               </div>

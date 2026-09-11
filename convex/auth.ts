@@ -1,5 +1,6 @@
 import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
+import type { WithoutSystemFields } from "convex/server";
 import { ConvexError, v } from "convex/values";
 
 import { internalMutation, internalQuery, query } from "./_generated/server";
@@ -24,8 +25,48 @@ import { consumeInviteOrThrow } from "./lib/invites";
 /** Roles that may never be claimed by an ordinary sign-up. */
 const PRIVILEGED_ROLES = new Set<Doc<"users">["accessRole"]>(["smt_admin", "super_admin"]);
 
+/**
+ * Normalise an address the same way `users.email` is stored.
+ *
+ * `staff.create` lowercases and trims before writing, and `createOrUpdateUser`
+ * lowercases before looking a person up — but Convex Auth uses the RAW
+ * submitted string as `authAccounts.providerAccountId`. Without this, an
+ * account created as `someone@school.test` could not be signed into as
+ * `Someone@school.test`, and the failure is an opaque `InvalidAccountId`
+ * rather than anything a person could act on. Phone keyboards capitalise the
+ * first letter by default, so this is the common case, not the edge case.
+ */
+function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Password],
+  providers: [
+    Password({
+      /**
+       * DANGER, read before editing: this must return an explicit object
+       * literal and must NEVER spread `params`.
+       *
+       * Whatever this returns becomes `args.profile` in `createOrUpdateUser`,
+       * and Convex Auth additionally copies `profile.emailVerified` and
+       * `profile.phoneVerified` straight onto the `authAccounts` row. Spreading
+       * caller-supplied params here would let a client mark itself verified —
+       * and would let one forge the `inviteTokenHash` that the callback below
+       * treats as proof of an invitation.
+       *
+       * Returning only a normalised `email` keeps both of those unreachable
+       * from any client, exactly as the unconfigured default did.
+       */
+      profile(params) {
+        // The cast is the same one the library's own `defaultProfile` needs:
+        // `profile` is typed as a whole user document, and this callback
+        // resolves an existing row rather than inserting one.
+        return { email: normalizeEmail(params.email) } as unknown as WithoutSystemFields<
+          Doc<"users">
+        > & { email: string };
+      },
+    }),
+  ],
 
   callbacks: {
     /**
@@ -80,7 +121,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
           message: "An email address is required to sign in.",
         });
       }
-      const normalized = email.trim().toLowerCase();
+      // Normalised again rather than trusted: `invites.accept` reaches this
+      // callback through `createAccount`, which never runs the provider's
+      // `profile`, so this is the only normalisation on that path.
+      const normalized = normalizeEmail(email);
 
       const user = await ctx.db
         .query("users")
