@@ -9,6 +9,15 @@
 #
 # That is exactly what Nixpacks auto-detection did here. This Dockerfile exists
 # to take the choice away from a heuristic and state it outright.
+#
+# NOTE: this file is NOT the active build path yet. The Dokploy app is still on
+# buildType `nixpacks`, and what currently keeps the site up is the env var
+# NIXPACKS_START_CMD=node .output/server/index.mjs, which overrides the Caddy
+# start command Nixpacks would otherwise use. To switch to this file, set the
+# app's build type to `dockerfile` (Docker File: Dockerfile, context and build
+# stage empty) and redeploy. Keep the VITE_* build args when you do — they are
+# wired as ARG below and a Dockerfile build will not inherit them from the
+# runtime env.
 
 # ---------------------------------------------------------------------------
 # Build
