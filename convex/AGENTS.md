@@ -95,6 +95,15 @@ Function surface:
 
 Invitations (`convex/invites.ts`, `convex/lib/invites.ts`):
 
+- The prod push installs **six** components for Resend, not four: `resend`,
+  `resend/rateLimiter`, `resend/emailWorkpool`, `resend/callbackWorkpool`, and a
+  `batchWorker` nested inside each workpool. The test harness registers the first four.
+  That is enough only because no test drains the scheduler — the batch workers are
+  reached at delivery time, which never happens offline. If a test ever needs
+  `finishInProgressScheduledFunctions`, register
+  `resend/emailWorkpool/batchWorker` and `resend/callbackWorkpool/batchWorker` too,
+  and expect a real send attempt
+
 - **An invitation is the only way a teacher sets a first password.** Before this existed, `createOrUpdateUser` demanded a claim window only for privileged roles, so a `staff` row had no window and no token and whoever submitted `flow: "signUp"` first for a guessable school address became that teacher. The fourth refusal in that callback closes it
 - **`Password` must stay uncalled** in `convex/auth.ts`. `invites.accept` passes `{ email, inviteTokenHash }` to `createAccount`, and the callback trusts that key _because_ the provider's `defaultProfile` builds `{ email }` from scratch and discards every other submitted field — there is no client path that can inject it. Configuring `Password({ profile })` would create one, and would also expose `emailVerified`/`phoneVerified`, which Convex Auth patches straight onto `authAccounts`
 - **Only the SHA-256 of a token is stored.** Hashing happens **in actions only**: `crypto.subtle` is not documented for the query/mutation runtime, and Convex Auth itself uses a pure-JS SHA-256 in its mutation path rather than relying on it
