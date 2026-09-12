@@ -16,6 +16,7 @@ import {
   Headphones,
   Plus,
   Settings2,
+  Target,
   Upload,
   Video,
 } from "lucide-react";
@@ -549,6 +550,34 @@ function AdminModuleDetail() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gold-soft text-primary-deep">
+                <Target className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">Assessment</p>
+                <h2 className="mt-2 text-2xl font-bold text-foreground">
+                  {data.questionCountLabel}
+                </h2>
+                <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                  Staff answer these inside the module&rsquo;s assessment lesson. Passing is what
+                  marks that lesson complete, so a published assessment lesson needs at least one
+                  question before the module can go live.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/academy/admin/modules/$moduleSlug/assessment"
+              params={{ moduleSlug }}
+              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
+            >
+              Build the assessment <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </section>
 

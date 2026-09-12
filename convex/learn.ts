@@ -3,19 +3,14 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
-import {
-  BADGES,
-  XP_PER_LESSON,
-  currentStreak,
-  monthKeyOf,
-  newlyEarnedBadges,
-  xpForModule,
-} from "./lib/awards";
+import { BADGES, currentStreak } from "./lib/awards";
 import { requireStaff } from "./lib/authz";
-import { MAX_ACTIVITY, MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
-import { MAX_SIBLINGS } from "./lib/ordering";
+import { MAX_ACTIVITY, MAX_ATTEMPTS, MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
+import { MAX_OPTIONS, MAX_SIBLINGS } from "./lib/ordering";
+import { applyLessonCompletion, publishedLessons } from "./lib/progress";
 import { DOWNLOAD_URL_TTL_SECONDS, r2 } from "./lib/storage";
 import schema from "./schema";
+import { assessmentQuestionKind } from "./validators";
 
 /**
  * The learner surface: what a signed-in teacher can see of their own training.
@@ -46,20 +41,6 @@ async function enrollmentFor(
     .query("enrollments")
     .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId).eq("moduleId", moduleId))
     .unique();
-}
-
-/** Published lessons of one module, in order. Bounded: a module holds a handful. */
-async function publishedLessons(
-  ctx: QueryCtx,
-  moduleId: Id<"modules">,
-): Promise<Array<Doc<"lessons">>> {
-  const lessons = await ctx.db
-    .query("lessons")
-    .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", moduleId))
-    .take(MAX_SIBLINGS);
-  // Drafts are editorial work in progress. A learner seeing one would be asked
-  // to complete something the school has not finished writing.
-  return lessons.filter((lesson) => lesson.publishState === "published");
 }
 
 /**
@@ -350,6 +331,130 @@ export const lesson = query({
   },
 });
 
+/**
+ * The assessment a learner is about to sit.
+ *
+ * **The answer key never leaves the server.** The option shape below is spelled
+ * out field by field rather than reached for with
+ * `schema.doc("assessmentQuestionOptions")`, which would happily pass
+ * `isCorrect` through the validator and put the correct answer in the page
+ * payload of every learner who opens the quiz. This is the same reason
+ * `learn.leaderboard` is hand-shaped, and a test asserts the returned key set
+ * so widening it breaks the build rather than quietly leaking.
+ *
+ * Questions come back in their stored order and are never shuffled: a query
+ * must be deterministic, shuffling would need the wall clock that queries must
+ * not read, and a live subscription would otherwise reorder the paper under
+ * somebody mid-answer.
+ */
+export const assessment = query({
+  args: { moduleSlug: v.string(), lessonSlug: v.string() },
+  returns: v.object({
+    module: schema.doc("modules"),
+    lesson: schema.doc("lessons"),
+    status: v.string(),
+    questions: v.array(
+      v.object({
+        questionId: v.id("assessmentQuestions"),
+        kind: assessmentQuestionKind,
+        prompt: v.string(),
+        options: v.array(
+          v.object({
+            optionId: v.id("assessmentQuestionOptions"),
+            text: v.string(),
+          }),
+        ),
+      }),
+    ),
+    passMark: v.number(),
+    /** Best score so far, or null when never attempted. */
+    bestScorePercent: v.union(v.number(), v.null()),
+    lastAttempt: v.union(
+      v.object({
+        scorePercent: v.number(),
+        passed: v.boolean(),
+        attemptedAt: v.number(),
+      }),
+      v.null(),
+    ),
+    attemptCount: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const { userId } = await requireStaff(ctx);
+    const { module, enrollment } = await assignedModuleOrThrow(ctx, userId, args.moduleSlug);
+
+    const lessons = await publishedLessons(ctx, module._id);
+    const lesson = lessons.find((row) => row.slug === args.lessonSlug);
+    if (lesson === undefined) {
+      // Same message `learn.lesson` gives, so a draft assessment reads exactly
+      // like one that does not exist.
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "That lesson is not part of this module.",
+      });
+    }
+    if (lesson.kind !== "assessment") {
+      throw new ConvexError({ code: "INVALID", message: "That lesson is not an assessment." });
+    }
+
+    const questionRows = await ctx.db
+      .query("assessmentQuestions")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+
+    const questions = [];
+    for (const question of questionRows) {
+      const options = await ctx.db
+        .query("assessmentQuestionOptions")
+        .withIndex("by_questionId_and_order", (q) => q.eq("questionId", question._id))
+        .take(MAX_OPTIONS);
+      questions.push({
+        questionId: question._id,
+        kind: question.kind,
+        prompt: question.prompt,
+        // Mapped by hand, so an added column on the options table cannot
+        // silently start reaching the learner.
+        options: options.map((option) => ({ optionId: option._id, text: option.text })),
+      });
+    }
+
+    // `assessmentAttempts` grows without bound, so this read is capped like
+    // every other.
+    const attempts = await ctx.db
+      .query("assessmentAttempts")
+      .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId).eq("moduleId", module._id))
+      .take(MAX_ATTEMPTS);
+    let lastAttempt: { scorePercent: number; passed: boolean; attemptedAt: number } | null = null;
+    for (const attempt of attempts) {
+      if (lastAttempt === null || attempt.attemptedAt > lastAttempt.attemptedAt) {
+        lastAttempt = {
+          scorePercent: attempt.scorePercent,
+          passed: attempt.passed,
+          attemptedAt: attempt.attemptedAt,
+        };
+      }
+    }
+
+    const progress = await ctx.db
+      .query("lessonProgress")
+      .withIndex("by_userId_and_lessonId", (q) => q.eq("userId", userId).eq("lessonId", lesson._id))
+      .unique();
+
+    return {
+      module,
+      lesson,
+      status: progress?.status ?? "not_started",
+      questions,
+      passMark: module.passMark,
+      // Read from the enrollment rather than recomputed over the attempts, so
+      // it cannot disagree with the number the profile ledger already shows.
+      bestScorePercent: enrollment.score ?? null,
+      lastAttempt,
+      attemptCount: attempts.length,
+    };
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -395,151 +500,209 @@ export const recordLessonProgress = mutation({
       });
     }
 
+    // An assessment is completed by passing it, not by asserting it. This is a
+    // public mutation, so hiding the button would leave the pass mark advisory:
+    // anyone could call this and take the module, its XP and its CPTD points
+    // without answering a question. Opening one is still a visit, so
+    // `completed: false` is deliberately untouched.
+    if (lesson.kind === "assessment" && args.completed) {
+      throw new ConvexError({
+        code: "USE_ASSESSMENT",
+        message: "Complete this assessment by passing it.",
+      });
+    }
+
     const now = Date.now();
     const existing = await ctx.db
       .query("lessonProgress")
       .withIndex("by_userId_and_lessonId", (q) => q.eq("userId", userId).eq("lessonId", lesson._id))
       .unique();
 
-    // Completion is sticky. Re-opening a finished lesson is a visit, not a
-    // regression, and a tracker that quietly un-completed work would be worse
-    // than one that never recorded it.
-    const status = args.completed || existing?.status === "completed" ? "completed" : "in_progress";
+    return await applyLessonCompletion(ctx, {
+      user,
+      userId,
+      module,
+      enrollment,
+      lesson,
+      existingProgress: existing,
+      completed: args.completed,
+      now,
+    });
+  },
+});
 
-    // The two transitions worth paying for, captured BEFORE anything is
-    // written. Everything below keys off these rather than off the new state,
-    // which is what stops a replayed lesson paying twice.
-    const lessonNewlyCompleted = status === "completed" && existing?.status !== "completed";
-    const moduleWasCompleted = enrollment.status === "completed";
-    const moduleFirstOpened = enrollment.startedAt === undefined;
+/**
+ * Grade one attempt at a module's assessment.
+ *
+ * **Grading reads the database, never the client's claim about what is
+ * correct.** The request carries only which option was picked; which option was
+ * right is looked up here. The score is over every question in the bank, so
+ * answering only the one question you happen to know scores 1/N, not 100%.
+ *
+ * A wrong answer is not an error. An unanswered question, or an option id that
+ * belongs to a different question, simply scores zero for that question — a
+ * legitimate submission and a client bug respectively, and neither deserves a
+ * 500 in a teacher's face.
+ *
+ * Every attempt is recorded. Passing is what completes the lesson, which is why
+ * `recordLessonProgress` refuses to complete an assessment lesson directly;
+ * failing leaves the lesson open and the teacher can try again.
+ */
+export const submitAssessment = mutation({
+  args: {
+    moduleSlug: v.string(),
+    lessonSlug: v.string(),
+    answers: v.array(
+      v.object({
+        questionId: v.id("assessmentQuestions"),
+        optionId: v.id("assessmentQuestionOptions"),
+      }),
+    ),
+  },
+  returns: v.object({
+    scorePercent: v.number(),
+    passMark: v.number(),
+    passed: v.boolean(),
+    correctCount: v.number(),
+    totalCount: v.number(),
+    /** Per question, right or wrong. Never which option was the right one. */
+    results: v.array(v.object({ questionId: v.id("assessmentQuestions"), correct: v.boolean() })),
+    bestScorePercent: v.number(),
+    progressPercent: v.number(),
+    moduleCompleted: v.boolean(),
+    xpAwarded: v.number(),
+    cptdAwarded: v.number(),
+    badgesAwarded: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireStaff(ctx);
+    const { module, enrollment } = await assignedModuleOrThrow(ctx, userId, args.moduleSlug);
 
-    if (existing === null) {
-      await ctx.db.insert("lessonProgress", {
-        userId,
-        lessonId: lesson._id,
-        moduleId: module._id,
-        status,
-        lastViewedAt: now,
-        ...(status === "completed" ? { completedAt: now } : {}),
-      });
-    } else {
-      await ctx.db.patch("lessonProgress", existing._id, {
-        status,
-        lastViewedAt: now,
-        ...(status === "completed" && existing.completedAt === undefined
-          ? { completedAt: now }
-          : {}),
-      });
-    }
-
-    // Recomputed from the rows, never incremented.
     const lessons = await publishedLessons(ctx, module._id);
-    const progressRows = await ctx.db
-      .query("lessonProgress")
-      .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId).eq("moduleId", module._id))
+    const lesson = lessons.find((row) => row.slug === args.lessonSlug);
+    if (lesson === undefined) {
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "That lesson is not part of this module.",
+      });
+    }
+    if (lesson.kind !== "assessment") {
+      throw new ConvexError({ code: "INVALID", message: "That lesson is not an assessment." });
+    }
+
+    const questions = await ctx.db
+      .query("assessmentQuestions")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
       .take(MAX_SIBLINGS);
-    const publishedIds = new Set(lessons.map((row) => row._id));
-    const done = progressRows.filter(
-      (row) => row.status === "completed" && publishedIds.has(row.lessonId),
-    ).length;
-    const progressPercent = lessons.length === 0 ? 0 : Math.round((done / lessons.length) * 100);
-    const moduleCompleted = lessons.length > 0 && done === lessons.length;
-
-    await ctx.db.patch("enrollments", enrollment._id, {
-      progressPercent,
-      status: moduleCompleted ? "completed" : "in_progress",
-      lastAccessedAt: now,
-      ...(enrollment.startedAt === undefined ? { startedAt: now } : {}),
-      ...(moduleCompleted && enrollment.completedAt === undefined ? { completedAt: now } : {}),
-    });
-
-    // Same formula as `staff.recomputeCompliance` and the seed. If these three
-    // ever disagreed, a profile would contradict its own rows.
-    const allEnrollments = await ctx.db
-      .query("enrollments")
-      .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId))
-      .take(MAX_MODULES);
-    const compliancePercent =
-      allEnrollments.length === 0
-        ? 0
-        : Math.round(
-            allEnrollments.reduce((sum, row) => sum + row.progressPercent, 0) /
-              allEnrollments.length,
-          );
-    // --- earning ---------------------------------------------------------
-    //
-    // Awards are the one thing here that is incremented rather than
-    // recomputed, and that is deliberate: XP and CPTD points are a record of
-    // what somebody was paid at the time, not a function of their current
-    // state. Recomputing them would mean un-paying a teacher whose module was
-    // later archived. The guards above are what keep the increment honest.
-    const moduleNewlyCompleted = moduleCompleted && !moduleWasCompleted;
-
-    const xpAwarded =
-      (lessonNewlyCompleted ? XP_PER_LESSON : 0) + (moduleNewlyCompleted ? xpForModule(module) : 0);
-    const cptdAwarded = moduleNewlyCompleted ? module.cptdPoints : 0;
-
-    // The append-only history. Nothing else writes this table, so it is also
-    // the only thing that makes a streak computable at all.
-    const events: Array<{ kind: "module_started" | "module_completed" | "lesson_completed" }> = [];
-    if (moduleFirstOpened) events.push({ kind: "module_started" });
-    if (lessonNewlyCompleted) events.push({ kind: "lesson_completed" });
-    if (moduleNewlyCompleted) events.push({ kind: "module_completed" });
-    for (const event of events) {
-      await ctx.db.insert("progressEvents", {
-        userId,
-        moduleId: module._id,
-        ...(event.kind === "lesson_completed" ? { lessonId: lesson._id } : {}),
-        kind: event.kind,
-        occurredAt: now,
-        monthKey: monthKeyOf(now),
+    // Never score 0/0. It would round to 100%, complete the module, and hand
+    // out a Quiz Ace badge for an assessment nobody has written yet.
+    if (questions.length === 0) {
+      throw new ConvexError({
+        code: "NOT_READY",
+        message: "This assessment has no questions yet.",
       });
     }
 
-    await ctx.db.patch("users", userId, {
-      compliancePercent,
-      lastActiveAt: now,
-      ...(xpAwarded === 0 ? {} : { xpTotal: user.xpTotal + xpAwarded }),
-      ...(cptdAwarded === 0 ? {} : { cptdPoints: user.cptdPoints + cptdAwarded }),
-    });
+    // Last write wins if a client sends the same question twice.
+    const picked = new Map<string, string>();
+    for (const answer of args.answers) picked.set(answer.questionId, answer.optionId);
 
-    // --- badges -----------------------------------------------------------
-    // Newest first, because a streak is about the recent tail. Without the
-    // `desc` this takes the OLDEST 500 events and a long-serving user's streak
-    // would be computed from history that ended months ago.
-    const activity = await ctx.db
-      .query("progressEvents")
-      .withIndex("by_userId_and_occurredAt", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(MAX_ACTIVITY);
-    const held = await ctx.db
-      .query("badgeAwards")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .take(BADGES.length * 2);
-
-    const completedEnrollments = allEnrollments.filter((row) => row.status === "completed");
-    const scores = allEnrollments
-      .map((row) => row.score)
-      .filter((score): score is number => score !== undefined);
-
-    const badgesAwarded = newlyEarnedBadges(
-      {
-        modulesCompleted: completedEnrollments.length,
-        modulesAssigned: allEnrollments.length,
-        compliancePercent,
-        streakDays: currentStreak(
-          activity.map((row) => row.occurredAt),
-          now,
-        ),
-        bestScorePercent: scores.length === 0 ? null : Math.max(...scores),
-      },
-      new Set(held.map((row) => row.badgeKey)),
-    );
-    for (const badgeKey of badgesAwarded) {
-      await ctx.db.insert("badgeAwards", { userId, badgeKey, awardedAt: now });
+    const results = [];
+    let correctCount = 0;
+    for (const question of questions) {
+      const options = await ctx.db
+        .query("assessmentQuestionOptions")
+        .withIndex("by_questionId_and_order", (q) => q.eq("questionId", question._id))
+        .take(MAX_OPTIONS);
+      const chosen = picked.get(question._id);
+      // An option from another question fails this lookup and scores wrong,
+      // which is what makes a mismatched id harmless rather than fatal.
+      const correct =
+        chosen !== undefined && options.some((option) => option._id === chosen && option.isCorrect);
+      if (correct) correctCount += 1;
+      results.push({ questionId: question._id, correct });
     }
 
-    return { progressPercent, moduleCompleted, xpAwarded, cptdAwarded, badgesAwarded };
+    const scorePercent = Math.round((correctCount / questions.length) * 100);
+    const passed = scorePercent >= module.passMark;
+
+    // Every transition captured before anything is written, which is the
+    // contract `applyLessonCompletion` depends on.
+    const existingProgress = await ctx.db
+      .query("lessonProgress")
+      .withIndex("by_userId_and_lessonId", (q) => q.eq("userId", userId).eq("lessonId", lesson._id))
+      .unique();
+    const priorBest = enrollment.score;
+    const now = Date.now();
+
+    // Written on every attempt, pass or fail. This row is what "the attempt was
+    // recorded but the lesson is not complete" actually means.
+    await ctx.db.insert("assessmentAttempts", {
+      userId,
+      moduleId: module._id,
+      lessonId: lesson._id,
+      scorePercent,
+      passed,
+      attemptedAt: now,
+    });
+
+    // Best of, updated on every attempt rather than only on a pass. The schema
+    // calls an undefined score "never attempted", which is a fact about
+    // attempts: somebody who has scored 70% five times against an 80% pass mark
+    // should not still read as "—" on their own profile.
+    const bestScorePercent = Math.max(priorBest ?? 0, scorePercent);
+
+    if (!passed) {
+      await ctx.db.patch("enrollments", enrollment._id, {
+        score: bestScorePercent,
+        lastAccessedAt: now,
+      });
+      await ctx.db.patch("users", userId, { lastActiveAt: now });
+      return {
+        scorePercent,
+        passMark: module.passMark,
+        passed,
+        correctCount,
+        totalCount: questions.length,
+        results,
+        bestScorePercent,
+        // Unchanged: a failed attempt writes no lesson progress. The route's
+        // mount effect already recorded the visit.
+        progressPercent: enrollment.progressPercent,
+        moduleCompleted: enrollment.status === "completed",
+        xpAwarded: 0,
+        cptdAwarded: 0,
+        badgesAwarded: [],
+      };
+    }
+
+    // The new score rides in on the helper's single enrollment patch, so the
+    // badge facts it reads back afterwards already see it. Patching the score
+    // separately beforehand would also work, but this way Quiz Ace cannot be
+    // awarded one attempt late.
+    const awards = await applyLessonCompletion(ctx, {
+      user,
+      userId,
+      module,
+      enrollment,
+      lesson,
+      existingProgress,
+      completed: true,
+      now,
+      extraEvents: ["assessment_passed"],
+      extraEnrollmentPatch: { score: bestScorePercent },
+    });
+
+    return {
+      scorePercent,
+      passMark: module.passMark,
+      passed,
+      correctCount,
+      totalCount: questions.length,
+      results,
+      bestScorePercent,
+      ...awards,
+    };
   },
 });
 

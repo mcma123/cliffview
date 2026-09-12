@@ -77,6 +77,22 @@ export const lessonProgressStatus = v.union(
 );
 export type LessonProgressStatus = Infer<typeof lessonProgressStatus>;
 
+/**
+ * How an assessment question is answered.
+ *
+ * `true_false` is not a separate shape — it is a multiple choice with exactly
+ * two options whose text `questions.save` normalises to "True" and "False". One
+ * stored shape means one grading path, and the kind survives only so the admin
+ * editor knows which form to draw.
+ *
+ * Mirrors `AssessmentQuestionKind` in `src/domain/academy/entities.ts`.
+ */
+export const assessmentQuestionKind = v.union(
+  v.literal("multiple_choice"),
+  v.literal("true_false"),
+);
+export type AssessmentQuestionKind = Infer<typeof assessmentQuestionKind>;
+
 /** Mirrors `AiReviewQuestion.difficulty`. */
 export const questionDifficulty = v.union(
   v.literal("Easy"),

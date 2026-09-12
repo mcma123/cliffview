@@ -3,12 +3,13 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { recordAudit, stamp } from "./lib/audit";
+import { assertAssessmentReady } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
 import { moduleCategory, publishState } from "./validators";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { MAX_MODULES } from "./lib/counts";
-import { MAX_SIBLINGS } from "./lib/ordering";
+import { MAX_OPTIONS, MAX_SIBLINGS } from "./lib/ordering";
 import { deleteBlobIfPresent } from "./lib/storage";
 import schema from "./schema";
 
@@ -115,6 +116,13 @@ export const adminDetail = query({
     ),
     assets: v.array(schema.doc("assets")),
     featuredAsset: v.union(schema.doc("assets"), v.null()),
+    /**
+     * How many assessment questions this module has, so the editor can link to
+     * the builder and say what is there. A count, not the questions themselves:
+     * the builder is its own screen with its own subscription, and folding the
+     * whole bank in here would repaint this page on every question save.
+     */
+    questionCount: v.number(),
   }),
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -145,7 +153,19 @@ export const adminDetail = query({
         ? null
         : await ctx.db.get("assets", module.featuredAssetId);
 
-    return { module, objectives, lessons, assets, featuredAsset };
+    const questions = await ctx.db
+      .query("assessmentQuestions")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+
+    return {
+      module,
+      objectives,
+      lessons,
+      assets,
+      featuredAsset,
+      questionCount: questions.length,
+    };
   },
 });
 
@@ -359,6 +379,12 @@ export const publish = mutation({
       });
     }
 
+    // A published assessment lesson with an empty question bank is a lesson
+    // nobody can finish, and since passing it is what completes it, a module
+    // nobody can complete. `lessons.setPublishState` holds the same rule from
+    // the other side.
+    await assertAssessmentReady(ctx, module._id);
+
     await ctx.db.patch("modules", module._id, {
       publishState: "published",
       publishedAt: Date.now(),
@@ -465,6 +491,24 @@ export const remove = mutation({
       .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
       .take(MAX_SIBLINGS);
     for (const objective of objectives) await ctx.db.delete("moduleObjectives", objective._id);
+
+    // Options before questions, for the same reason lesson joins go before
+    // lessons: an option row left behind points at nothing and no index can
+    // ever name it again.
+    const questions = await ctx.db
+      .query("assessmentQuestions")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+    for (const question of questions) {
+      const options = await ctx.db
+        .query("assessmentQuestionOptions")
+        .withIndex("by_questionId_and_order", (q) => q.eq("questionId", question._id))
+        .take(MAX_OPTIONS);
+      for (const option of options) {
+        await ctx.db.delete("assessmentQuestionOptions", option._id);
+      }
+      await ctx.db.delete("assessmentQuestions", question._id);
+    }
 
     await ctx.db.delete("modules", module._id);
     await recordAudit(ctx, {

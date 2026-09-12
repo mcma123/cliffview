@@ -32,6 +32,7 @@ import { Route as AcademyAdminModulesCreateRouteImport } from './routes/academy.
 import { Route as AcademyAdminModulesModuleSlugRouteImport } from './routes/academy.admin.modules.$moduleSlug'
 import { Route as AcademyAdminModulesModuleSlugIndexRouteImport } from './routes/academy.admin.modules.$moduleSlug.index'
 import { Route as AcademyModulesModuleSlugLessonLessonIdRouteImport } from './routes/academy.modules.$moduleSlug.lesson.$lessonId'
+import { Route as AcademyAdminModulesModuleSlugAssessmentRouteImport } from './routes/academy.admin.modules.$moduleSlug.assessment'
 import { Route as AcademyAdminModulesModuleSlugLessonsLessonIdRouteImport } from './routes/academy.admin.modules.$moduleSlug.lessons.$lessonId'
 import { Route as AcademyAdminModulesModuleSlugAssetsAssetIdRouteImport } from './routes/academy.admin.modules.$moduleSlug.assets.$assetId'
 
@@ -158,6 +159,12 @@ const AcademyModulesModuleSlugLessonLessonIdRoute =
     path: '/lesson/$lessonId',
     getParentRoute: () => AcademyModulesModuleSlugRoute,
   } as any)
+const AcademyAdminModulesModuleSlugAssessmentRoute =
+  AcademyAdminModulesModuleSlugAssessmentRouteImport.update({
+    id: '/assessment',
+    path: '/assessment',
+    getParentRoute: () => AcademyAdminModulesModuleSlugRoute,
+  } as any)
 const AcademyAdminModulesModuleSlugLessonsLessonIdRoute =
   AcademyAdminModulesModuleSlugLessonsLessonIdRouteImport.update({
     id: '/lessons/$lessonId',
@@ -193,6 +200,7 @@ export interface FileRoutesByFullPath {
   '/academy/admin/modules/': typeof AcademyAdminModulesIndexRoute
   '/academy/admin/staff/': typeof AcademyAdminStaffIndexRoute
   '/academy/modules/$moduleSlug/': typeof AcademyModulesModuleSlugIndexRoute
+  '/academy/admin/modules/$moduleSlug/assessment': typeof AcademyAdminModulesModuleSlugAssessmentRoute
   '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
   '/academy/admin/modules/$moduleSlug/': typeof AcademyAdminModulesModuleSlugIndexRoute
   '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
@@ -214,6 +222,7 @@ export interface FileRoutesByTo {
   '/academy/admin/modules': typeof AcademyAdminModulesIndexRoute
   '/academy/admin/staff': typeof AcademyAdminStaffIndexRoute
   '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugIndexRoute
+  '/academy/admin/modules/$moduleSlug/assessment': typeof AcademyAdminModulesModuleSlugAssessmentRoute
   '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
   '/academy/admin/modules/$moduleSlug': typeof AcademyAdminModulesModuleSlugIndexRoute
   '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
@@ -242,6 +251,7 @@ export interface FileRoutesById {
   '/academy/admin/modules/': typeof AcademyAdminModulesIndexRoute
   '/academy/admin/staff/': typeof AcademyAdminStaffIndexRoute
   '/academy/modules/$moduleSlug/': typeof AcademyModulesModuleSlugIndexRoute
+  '/academy/admin/modules/$moduleSlug/assessment': typeof AcademyAdminModulesModuleSlugAssessmentRoute
   '/academy/modules/$moduleSlug/lesson/$lessonId': typeof AcademyModulesModuleSlugLessonLessonIdRoute
   '/academy/admin/modules/$moduleSlug/': typeof AcademyAdminModulesModuleSlugIndexRoute
   '/academy/admin/modules/$moduleSlug/assets/$assetId': typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
@@ -271,6 +281,7 @@ export interface FileRouteTypes {
     | '/academy/admin/modules/'
     | '/academy/admin/staff/'
     | '/academy/modules/$moduleSlug/'
+    | '/academy/admin/modules/$moduleSlug/assessment'
     | '/academy/modules/$moduleSlug/lesson/$lessonId'
     | '/academy/admin/modules/$moduleSlug/'
     | '/academy/admin/modules/$moduleSlug/assets/$assetId'
@@ -292,6 +303,7 @@ export interface FileRouteTypes {
     | '/academy/admin/modules'
     | '/academy/admin/staff'
     | '/academy/modules/$moduleSlug'
+    | '/academy/admin/modules/$moduleSlug/assessment'
     | '/academy/modules/$moduleSlug/lesson/$lessonId'
     | '/academy/admin/modules/$moduleSlug'
     | '/academy/admin/modules/$moduleSlug/assets/$assetId'
@@ -319,6 +331,7 @@ export interface FileRouteTypes {
     | '/academy/admin/modules/'
     | '/academy/admin/staff/'
     | '/academy/modules/$moduleSlug/'
+    | '/academy/admin/modules/$moduleSlug/assessment'
     | '/academy/modules/$moduleSlug/lesson/$lessonId'
     | '/academy/admin/modules/$moduleSlug/'
     | '/academy/admin/modules/$moduleSlug/assets/$assetId'
@@ -500,6 +513,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcademyModulesModuleSlugLessonLessonIdRouteImport
       parentRoute: typeof AcademyModulesModuleSlugRoute
     }
+    '/academy/admin/modules/$moduleSlug/assessment': {
+      id: '/academy/admin/modules/$moduleSlug/assessment'
+      path: '/assessment'
+      fullPath: '/academy/admin/modules/$moduleSlug/assessment'
+      preLoaderRoute: typeof AcademyAdminModulesModuleSlugAssessmentRouteImport
+      parentRoute: typeof AcademyAdminModulesModuleSlugRoute
+    }
     '/academy/admin/modules/$moduleSlug/lessons/$lessonId': {
       id: '/academy/admin/modules/$moduleSlug/lessons/$lessonId'
       path: '/lessons/$lessonId'
@@ -518,6 +538,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AcademyAdminModulesModuleSlugRouteChildren {
+  AcademyAdminModulesModuleSlugAssessmentRoute: typeof AcademyAdminModulesModuleSlugAssessmentRoute
   AcademyAdminModulesModuleSlugIndexRoute: typeof AcademyAdminModulesModuleSlugIndexRoute
   AcademyAdminModulesModuleSlugAssetsAssetIdRoute: typeof AcademyAdminModulesModuleSlugAssetsAssetIdRoute
   AcademyAdminModulesModuleSlugLessonsLessonIdRoute: typeof AcademyAdminModulesModuleSlugLessonsLessonIdRoute
@@ -525,6 +546,8 @@ interface AcademyAdminModulesModuleSlugRouteChildren {
 
 const AcademyAdminModulesModuleSlugRouteChildren: AcademyAdminModulesModuleSlugRouteChildren =
   {
+    AcademyAdminModulesModuleSlugAssessmentRoute:
+      AcademyAdminModulesModuleSlugAssessmentRoute,
     AcademyAdminModulesModuleSlugIndexRoute:
       AcademyAdminModulesModuleSlugIndexRoute,
     AcademyAdminModulesModuleSlugAssetsAssetIdRoute:

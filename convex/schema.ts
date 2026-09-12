@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import {
   accessRole,
   assetKind,
+  assessmentQuestionKind,
   auditFields,
   employmentStatus,
   enrollmentStatus,
@@ -296,6 +297,56 @@ export default defineSchema({
     .index("by_lessonId_and_order", ["lessonId", "order"])
     .index("by_assetId", ["assetId"])
     .index("by_lessonId_and_assetId", ["lessonId", "assetId"]),
+
+  /**
+   * The module's assessment questions.
+   *
+   * Scoped to the module, like `moduleObjectives`, not to the assessment
+   * lesson. A module has one assessment; the lesson of kind `assessment` is
+   * merely where a learner sits it, which is what `assessmentAttempts.lessonId`
+   * records.
+   *
+   * Deliberately NOT `aiQuestions`. That table is the AI review staging queue,
+   * carrying a `reviewStatus` and a confidence score for work nobody has
+   * approved yet. This one is authored content an admin stands behind. The two
+   * have different lifecycles, and `aiQuestions.prompt` plus its options map
+   * one-to-one onto `questions.save`, so importing an approved question later
+   * is a small function rather than a schema migration.
+   *
+   * No `publishState`. The module's own state gates the assessment, and
+   * `questions.save` refuses to write a question that is not gradable, so a
+   * stored question is always well-formed. A third editorial state here would
+   * be one nobody could reconcile against the module's.
+   */
+  assessmentQuestions: defineTable({
+    moduleId: v.id("modules"),
+    kind: assessmentQuestionKind,
+    prompt: v.string(),
+    order: v.number(),
+    ...auditFields,
+  }).index("by_moduleId_and_order", ["moduleId", "order"]),
+
+  /**
+   * Options for one question. Exactly one has `isCorrect: true`.
+   *
+   * That invariant spans the whole set, which is why `questions.save` writes a
+   * question and all of its options in one transaction rather than exposing a
+   * per-option mutation: there would otherwise be reachable instants where zero
+   * or two options were correct, and the learner reads live data.
+   *
+   * Required rather than optional, for the reason already recorded on
+   * `aiQuestionOptions`: the seed omitted it on wrong answers, so `undefined`
+   * and `false` both meant wrong.
+   *
+   * No `key` field. `aiQuestionOptions` stores "A"/"B"/"C"/"D", which is
+   * display prose derived from `order`; the presenter builds it.
+   */
+  assessmentQuestionOptions: defineTable({
+    questionId: v.id("assessmentQuestions"),
+    text: v.string(),
+    isCorrect: v.boolean(),
+    order: v.number(),
+  }).index("by_questionId_and_order", ["questionId", "order"]),
 
   // ---------------------------------------------------------------------------
   // Per-learner state

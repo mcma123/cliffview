@@ -4,6 +4,7 @@ import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { recordAudit, stamp } from "./lib/audit";
+import { NO_QUESTIONS_MESSAGE, hasQuestions } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
 import {
   MAX_SIBLINGS,
@@ -272,6 +273,15 @@ export const setPublishState = mutation({
   handler: async (ctx, args) => {
     const actor = await requireAdmin(ctx);
     const lesson = await lessonOrThrow(ctx, args.lessonId);
+
+    // The other door into a live assessment. `modules.publish` guards the same
+    // rule; without this one an admin publishes the module while this lesson is
+    // still a draft, then publishes the lesson, and the gate is bypassed.
+    if (args.publishState === "published" && lesson.kind === "assessment") {
+      if (!(await hasQuestions(ctx, lesson.moduleId))) {
+        throw new ConvexError({ code: "NOT_READY", message: NO_QUESTIONS_MESSAGE });
+      }
+    }
 
     await ctx.db.patch("lessons", lesson._id, { publishState: args.publishState, ...stamp() });
     await ctx.db.patch("modules", lesson.moduleId, stamp());

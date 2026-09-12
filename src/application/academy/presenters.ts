@@ -28,6 +28,7 @@ type StaffDetail = FunctionReturnType<typeof api.staff.detail>;
 type PublishState = "draft" | "published" | "archived";
 type AssetKind = "video" | "audio" | "document" | "worksheet";
 type LessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";
+type AssessmentQuestionKind = "multiple_choice" | "true_false";
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -250,12 +251,17 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
     publishState: module.publishState,
     publishLabel: formatPublishState(module.publishState),
     previewPath: getModulePreviewHref(module.slug),
+    questionCountLabel:
+      data.questionCount === 0
+        ? "No questions yet"
+        : `${data.questionCount} question${data.questionCount === 1 ? "" : "s"}`,
     // Row ids, not the text. Keying by objective text collided whenever two
     // objectives read the same.
     objectives: objectives.map((objective) => ({ id: objective._id, text: objective.text })),
     stats: [
       { label: "Lessons", value: `${lessons.length}` },
       { label: "Assets", value: `${assets.length}` },
+      { label: "Questions", value: `${data.questionCount}` },
       { label: "Pass Mark", value: `${module.passMark}%` },
       { label: "Updated", value: formatRelativeTime(module.contentUpdatedAt, now) },
     ],
@@ -851,5 +857,161 @@ export function presentLearnerLeaderboard(data: LearnerLeaderboard) {
           : data.xpToNextRank === null
             ? `You are #${data.myRank}.`
             : `You are #${data.myRank} — ${data.xpToNextRank} XP behind #${data.myRank - 1}.`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Assessments
+// ---------------------------------------------------------------------------
+
+type AdminAssessment = FunctionReturnType<typeof api.questions.adminList>;
+type LearnerAssessment = FunctionReturnType<typeof api.learn.assessment>;
+type AssessmentResult = FunctionReturnType<typeof api.learn.submitAssessment>;
+
+export function formatQuestionKind(kind: AssessmentQuestionKind): string {
+  return kind === "true_false" ? "True or false" : "Multiple choice";
+}
+
+/**
+ * The display letter for an answer.
+ *
+ * Derived from position, never stored. `aiQuestionOptions` keeps a `key` column
+ * holding "A"/"B"/"C"/"D", which is display prose that cannot survive a
+ * reorder; the assessment tables deliberately do not repeat that.
+ */
+export function optionKey(index: number): string {
+  return String.fromCharCode(65 + index);
+}
+
+/**
+ * How many answers a learner actually has to get right.
+ *
+ * With three questions and a pass mark of 80%, the only passing score is 3 of
+ * 3 — 2 of 3 is 67%. That is arithmetic, not a bug, but it reads like one, so
+ * the builder says it out loud rather than leaving an admin to discover it from
+ * a teacher's complaint.
+ */
+export function formatPassMarkHint(questionCount: number, passMark: number): string {
+  if (questionCount === 0) {
+    return `Pass mark ${passMark}%. Add a question to see what that means in practice.`;
+  }
+  const needed = Math.ceil((passMark / 100) * questionCount);
+  return `With ${questionCount} question${questionCount === 1 ? "" : "s"} and a pass mark of ${passMark}%, a learner must get ${needed} of ${questionCount} right.`;
+}
+
+export function presentAdminAssessment(data: AdminAssessment, now: number) {
+  const { module, assessmentLessons, questions } = data;
+
+  return {
+    moduleTitle: module.title,
+    moduleSlug: module.slug,
+    modulePath: getAdminModuleHref(module.slug),
+    passMark: module.passMark,
+    passMarkHint: formatPassMarkHint(questions.length, module.passMark),
+    /**
+     * Where a learner would actually sit this. Empty is worth saying out loud:
+     * the questions are stored and gradable, but nothing links to them, so no
+     * teacher will ever be shown them.
+     */
+    sittingLabel:
+      assessmentLessons.length === 0
+        ? "No assessment lesson yet — add a lesson of kind Assessment so staff can sit this."
+        : `Sat in: ${assessmentLessons.map((lesson) => lesson.title).join(", ")}`,
+    hasAssessmentLesson: assessmentLessons.length > 0,
+    questions: questions.map(({ question, options }, index) => ({
+      id: question._id,
+      number: index + 1,
+      kind: question.kind,
+      kindLabel: formatQuestionKind(question.kind),
+      prompt: question.prompt,
+      updatedLabel: formatUpdatedLabel(question.contentUpdatedAt, now),
+      isFirst: index === 0,
+      isLast: index === questions.length - 1,
+      options: options.map((option, optionIndex) => ({
+        id: option._id,
+        key: optionKey(optionIndex),
+        text: option.text,
+        isCorrect: option.isCorrect,
+      })),
+    })),
+  };
+}
+
+export function presentLearnerAssessment(data: LearnerAssessment) {
+  return {
+    moduleTitle: data.module.title,
+    moduleSlug: data.module.slug,
+    moduleHref: getModulePreviewHref(data.module.slug),
+    lessonTitle: data.lesson.title,
+    passMark: data.passMark,
+    passMarkLabel: `Pass mark ${data.passMark}%`,
+    isComplete: data.status === "completed",
+    // Structurally free of an answer key: the query never returns one.
+    questions: data.questions.map((question) => ({
+      id: question.questionId,
+      prompt: question.prompt,
+      kindLabel: formatQuestionKind(question.kind),
+      options: question.options.map((option, index) => ({
+        id: option.optionId,
+        key: optionKey(index),
+        text: option.text,
+      })),
+    })),
+    bestScoreLabel: data.bestScorePercent === null ? null : `Best score ${data.bestScorePercent}%`,
+    /**
+     * What a returning teacher sees instead of the results screen they saw
+     * right after submitting. The per-question breakdown is the submit
+     * mutation's return value and is deliberately not stored, so this banner is
+     * what the page degrades to on a refresh.
+     */
+    lastAttemptLabel:
+      data.lastAttempt === null
+        ? null
+        : `Last attempt ${data.lastAttempt.scorePercent}% — ${data.lastAttempt.passed ? "passed" : "not passed"}`,
+    attemptLabel:
+      data.attemptCount === 0
+        ? "Not attempted yet"
+        : `${data.attemptCount} attempt${data.attemptCount === 1 ? "" : "s"} so far`,
+  };
+}
+
+/**
+ * The results screen, built from what the grader returned.
+ *
+ * Pure, and takes the questions already on screen rather than re-reading them:
+ * there is no second query after submitting, which is why no per-answer table
+ * is needed. It reports right or wrong and never which option was correct, so a
+ * retake still asks something.
+ */
+export function presentAssessmentResult(
+  result: AssessmentResult,
+  questions: ReadonlyArray<{ id: string; prompt: string }>,
+) {
+  const byId = new Map(result.results.map((row) => [row.questionId as string, row.correct]));
+
+  return {
+    scoreLabel: `${result.scorePercent}%`,
+    passed: result.passed,
+    headline: result.passed ? "Assessment passed" : "Not passed yet",
+    subline: result.passed
+      ? `You scored ${result.correctCount} of ${result.totalCount}, against a pass mark of ${result.passMark}%.`
+      : `You scored ${result.correctCount} of ${result.totalCount}. You need ${result.passMark}% to pass — have another go.`,
+    rows: questions.map((question, index) => ({
+      id: question.id,
+      number: index + 1,
+      prompt: question.prompt,
+      correct: byId.get(question.id) ?? false,
+    })),
+    xpLabel: result.xpAwarded === 0 ? null : `+${result.xpAwarded} XP`,
+    cptdLabel: result.cptdAwarded === 0 ? null : `+${result.cptdAwarded} CPTD points`,
+    /**
+     * How many, not which. The badge catalogue lives in `convex/lib/awards.ts`
+     * and nowhere else — a label table here would be a second copy that drifts
+     * the first time a badge is renamed. The profile page already names them.
+     */
+    badgeLabel:
+      result.badgesAwarded.length === 0
+        ? null
+        : `${result.badgesAwarded.length} new badge${result.badgesAwarded.length === 1 ? "" : "s"} unlocked`,
   };
 }

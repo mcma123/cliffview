@@ -27,6 +27,15 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
  */
 export const MAX_SIBLINGS = 200;
 
+/**
+ * Options on one question.
+ *
+ * Two is the minimum that asks anything; past six a question is a reading
+ * comprehension test of its own option list. `questions.save` writes the whole
+ * set 1..N in one go, so options need no `nextOptionOrder` counterpart.
+ */
+export const MAX_OPTIONS = 6;
+
 /** Next append position for a module child list. */
 export async function nextLessonOrder(
   ctx: QueryCtx | MutationCtx,
@@ -58,6 +67,18 @@ export async function nextObjectiveOrder(
 ): Promise<number> {
   const last = await ctx.db
     .query("moduleObjectives")
+    .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", moduleId))
+    .order("desc")
+    .first();
+  return (last?.order ?? 0) + 1;
+}
+
+export async function nextQuestionOrder(
+  ctx: QueryCtx | MutationCtx,
+  moduleId: Id<"modules">,
+): Promise<number> {
+  const last = await ctx.db
+    .query("assessmentQuestions")
     .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", moduleId))
     .order("desc")
     .first();
@@ -109,6 +130,18 @@ export async function renumberObjectives(ctx: MutationCtx, moduleId: Id<"modules
   for (let i = 0; i < siblings.length; i++) {
     if (siblings[i].order !== i + 1) {
       await ctx.db.patch("moduleObjectives", siblings[i]._id, { order: i + 1 });
+    }
+  }
+}
+
+export async function renumberQuestions(ctx: MutationCtx, moduleId: Id<"modules">): Promise<void> {
+  const siblings = await ctx.db
+    .query("assessmentQuestions")
+    .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", moduleId))
+    .take(MAX_SIBLINGS);
+  for (let i = 0; i < siblings.length; i++) {
+    if (siblings[i].order !== i + 1) {
+      await ctx.db.patch("assessmentQuestions", siblings[i]._id, { order: i + 1 });
     }
   }
 }

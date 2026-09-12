@@ -11,10 +11,15 @@ import {
   Sparkles,
   Video,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { presentLearnerLesson } from "@/application/academy/presenters";
+import {
+  presentAssessmentResult,
+  presentLearnerAssessment,
+  presentLearnerLesson,
+} from "@/application/academy/presenters";
+import { AssessmentRunner, type RunnerResult } from "@/components/assessment-runner";
 import { PageNotice } from "@/components/page-notice";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
@@ -55,6 +60,17 @@ function LessonPage() {
   });
 
   const record = useMutation({ mutationFn: useConvexMutation(api.learn.recordLessonProgress) });
+
+  // A separate query rather than widening `learn.lesson`, which runs for every
+  // lesson in the app and mints signed R2 URLs an assessment has no use for.
+  const isAssessment = data?.lesson.kind === "assessment";
+  const quiz = useQuery({
+    ...convexQuery(api.learn.assessment, { moduleSlug, lessonSlug: lessonId }),
+    enabled: gate.status === "ready" && isAssessment === true,
+    retry: false,
+  });
+  const submit = useMutation({ mutationFn: useConvexMutation(api.learn.submitAssessment) });
+  const [result, setResult] = useState<RunnerResult | null>(null);
 
   // Opening a lesson is what moves it to "in progress", which is also what
   // starts the module and stamps `lastAccessedAt`. Fired once per lesson, not
@@ -106,6 +122,28 @@ function LessonPage() {
   // TypeScript can no longer prove is defined.
   const nextSlug = data.nextSlug;
   const previousSlug = data.previousSlug;
+
+  const view = isAssessment && quiz.data !== undefined ? presentLearnerAssessment(quiz.data) : null;
+
+  async function submitAnswers(answers: Array<{ questionId: string; optionId: string }>) {
+    try {
+      const graded = await submit.mutateAsync({
+        moduleSlug,
+        lessonSlug: lessonId,
+        // The ids came out of this very query, so the casts only restore the
+        // branding the component props erased.
+        answers: answers as Parameters<typeof submit.mutateAsync>[0]["answers"],
+      });
+      setResult(presentAssessmentResult(graded, view?.questions ?? []));
+      toast[graded.passed ? "success" : "info"](
+        graded.passed
+          ? `Assessment passed — ${graded.scorePercent}%.`
+          : `${graded.scorePercent}% — you need ${graded.passMark}% to pass.`,
+      );
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not mark your answers.");
+    }
+  }
 
   async function complete() {
     try {
@@ -169,7 +207,43 @@ function LessonPage() {
           </video>
         )}
 
-        {lesson.scenarioBody === null ? null : (
+        {!isAssessment || view !== null ? null : (
+          <section className="rounded-3xl border border-border bg-card p-8 text-center shadow-sm">
+            <p className="text-sm text-muted-foreground">
+              {quiz.error === null
+                ? "Loading the questions…"
+                : quiz.error instanceof Error
+                  ? quiz.error.message.replace(/^\[.*?\]\s*/, "")
+                  : "We could not load this assessment."}
+            </p>
+          </section>
+        )}
+
+        {view === null ? null : (
+          <AssessmentRunner
+            questions={view.questions}
+            passMarkLabel={view.passMarkLabel}
+            bestScoreLabel={view.bestScoreLabel}
+            lastAttemptLabel={view.lastAttemptLabel}
+            attemptLabel={view.attemptLabel}
+            result={result}
+            submitting={submit.isPending}
+            onSubmit={submitAnswers}
+            onRetake={() => setResult(null)}
+            onContinue={
+              result?.passed === true && nextSlug !== null
+                ? () =>
+                    void navigate({
+                      to: "/academy/modules/$moduleSlug/lesson/$lessonId",
+                      params: { moduleSlug, lessonId: nextSlug },
+                    })
+                : null
+            }
+            continueLabel="Next lesson"
+          />
+        )}
+
+        {isAssessment || lesson.scenarioBody === null ? null : (
           <section className="rounded-3xl border border-border bg-card p-8 shadow-sm">
             <h2 className="text-lg font-black tracking-tight text-foreground">
               {lesson.scenarioTitle ?? "Scenario"}
@@ -180,7 +254,7 @@ function LessonPage() {
           </section>
         )}
 
-        {lesson.assets.length === 0 ? null : (
+        {isAssessment || lesson.assets.length === 0 ? null : (
           <section className="space-y-3">
             <h2 className="text-lg font-black tracking-tight text-foreground">
               Supporting material
@@ -234,7 +308,7 @@ function LessonPage() {
           </section>
         )}
 
-        {lesson.reflectionPrompt === null ? null : (
+        {isAssessment || lesson.reflectionPrompt === null ? null : (
           <section className="rounded-3xl border border-gold/40 bg-gold-soft/40 p-8">
             <h2 className="text-sm font-bold uppercase tracking-widest text-primary-deep">
               Reflect
@@ -255,21 +329,29 @@ function LessonPage() {
               <ArrowLeft className="h-4 w-4" /> Previous
             </Link>
           )}
-          <button
-            onClick={complete}
-            disabled={record.isPending}
-            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            {lesson.isComplete
-              ? "Completed"
-              : record.isPending
-                ? "Saving…"
-                : lesson.nextHref === null
-                  ? "Mark complete"
-                  : "Complete and continue"}
-            {lesson.nextHref === null ? null : <ArrowRight className="h-4 w-4" />}
-          </button>
+          {/*
+            No "mark complete" on an assessment: passing it is what completes
+            it. `learn.recordLessonProgress` refuses this outright, so leaving
+            the button here would only produce a refusal the learner cannot act
+            on.
+          */}
+          {isAssessment ? null : (
+            <button
+              onClick={complete}
+              disabled={record.isPending}
+              className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {lesson.isComplete
+                ? "Completed"
+                : record.isPending
+                  ? "Saving…"
+                  : lesson.nextHref === null
+                    ? "Mark complete"
+                    : "Complete and continue"}
+              {lesson.nextHref === null ? null : <ArrowRight className="h-4 w-4" />}
+            </button>
+          )}
         </nav>
       </div>
     </StaffShell>

@@ -52,6 +52,15 @@ async function resetAll(ctx: MutationCtx): Promise<void> {
   for (const row of await ctx.db.query("lessonAssets").take(5000)) {
     await ctx.db.delete("lessonAssets", row._id);
   }
+  for (const row of await ctx.db.query("assessmentQuestionOptions").take(5000)) {
+    await ctx.db.delete("assessmentQuestionOptions", row._id);
+  }
+  for (const row of await ctx.db.query("assessmentQuestions").take(5000)) {
+    await ctx.db.delete("assessmentQuestions", row._id);
+  }
+  for (const row of await ctx.db.query("assessmentAttempts").take(5000)) {
+    await ctx.db.delete("assessmentAttempts", row._id);
+  }
   for (const row of await ctx.db.query("aiQuestionOptions").take(5000)) {
     await ctx.db.delete("aiQuestionOptions", row._id);
   }

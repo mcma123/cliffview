@@ -43,6 +43,9 @@ export const TREND_MONTHS = 6;
  */
 export const MAX_ACTIVITY = 500;
 
+/** Attempts read when showing a learner their own history. Growable, so capped. */
+export const MAX_ATTEMPTS = 100;
+
 /** Read a counter, treating a missing row as zero. */
 export async function readCounter(ctx: QueryCtx, name: CounterName): Promise<number> {
   const row = await ctx.db

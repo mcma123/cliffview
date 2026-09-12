@@ -8,6 +8,9 @@ export type ModuleLessonKind = "video" | "audio" | "reading" | "case-study" | "a
 
 export type ModuleAssetKind = "video" | "audio" | "document" | "worksheet";
 
+/** How an assessment question is answered. Mirrored by `convex/validators.ts`. */
+export type AssessmentQuestionKind = "multiple_choice" | "true_false";
+
 export interface StaffMember {
   id: string;
   firstName: string;
