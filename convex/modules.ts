@@ -176,6 +176,49 @@ export const adminDetail = query({
 // Every one calls `requireAdmin` first, before reading or writing anything, and
 // stamps `contentUpdatedAt`. Who acted goes to `auditLog`, never onto the row.
 
+/**
+ * The three numbers on a module, checked the same way wherever they are set.
+ *
+ * Worth being strict about, because one of them is irreversible. `cptdPoints`
+ * is multiplied by `XP_PER_CPTD_POINT` and **incremented** onto `users.xpTotal`
+ * when somebody finishes the module — awards record what a person was paid at
+ * the time and are never recomputed, so a negative value would permanently
+ * subtract from a teacher's total with no path back, and a fractional one would
+ * pay fractional XP. `passMark` is what `learn.submitAssessment` grades against.
+ *
+ * Magnitude is deliberately the school's business: there is no upper bound on
+ * duration or CPTD points, because any ceiling we picked would be a policy
+ * nobody could reconcile against anything.
+ */
+function assertModuleNumbers(args: {
+  durationMinutes?: number;
+  cptdPoints?: number;
+  passMark?: number;
+}): void {
+  for (const [field, label] of [
+    ["durationMinutes", "Duration"],
+    ["cptdPoints", "CPTD points"],
+  ] as const) {
+    const value = args[field];
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value < 0) {
+      throw new ConvexError({
+        code: "INVALID",
+        message: `${label} must be a whole number, zero or more.`,
+      });
+    }
+  }
+
+  if (args.passMark !== undefined) {
+    if (!Number.isInteger(args.passMark) || args.passMark < 0 || args.passMark > 100) {
+      throw new ConvexError({
+        code: "INVALID",
+        message: "Pass mark must be a whole number between 0 and 100.",
+      });
+    }
+  }
+}
+
 /** Slug-safe form of a title: lowercase, alphanumeric, single hyphens. */
 function slugify(input: string): string {
   return input
@@ -238,6 +281,8 @@ export const create = mutation({
       throw new ConvexError({ code: "INVALID", message: "A module needs a title." });
     }
 
+    assertModuleNumbers(args);
+
     const slug = await reserveSlug(ctx, slugify(title));
 
     // Append to the end of the running order, and derive the display number
@@ -293,9 +338,7 @@ export const update = mutation({
     const actor = await requireAdmin(ctx);
     const module = await moduleOrThrow(ctx, args.moduleId);
 
-    if (args.passMark !== undefined && (args.passMark < 0 || args.passMark > 100)) {
-      throw new ConvexError({ code: "INVALID", message: "Pass mark must be between 0 and 100." });
-    }
+    assertModuleNumbers(args);
     if (args.title !== undefined && args.title.trim().length === 0) {
       throw new ConvexError({ code: "INVALID", message: "A module needs a title." });
     }

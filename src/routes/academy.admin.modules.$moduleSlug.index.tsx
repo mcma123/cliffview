@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { presentAdminModuleDetail } from "@/application/academy/presenters";
+import { MODULE_CATEGORIES, type ModuleCategory } from "@/domain/academy/entities";
 import { api } from "../../convex/_generated/api";
 import {
   ArrowLeft,
@@ -86,8 +87,33 @@ function AdminModuleDetail() {
     audience: data.audience,
     outcome: data.outcome,
     description: data.description,
+    category: detail.module.category,
+    // Held as strings so a field being cleared mid-edit is an empty box rather
+    // than a NaN on its way to the server.
+    durationMinutes: `${detail.module.durationMinutes}`,
+    cptdPoints: `${detail.module.cptdPoints}`,
+    passMark: `${detail.module.passMark}`,
   });
   const [saving, setSaving] = useState(false);
+
+  /**
+   * A whole number, or a thrown message `run` will toast.
+   *
+   * These mirror `assertModuleNumbers` in `convex/modules.ts`. The server is the
+   * enforcement — it has to be, because `cptdPoints` is incremented onto a
+   * teacher's XP and never recomputed — but catching it here saves a round trip
+   * and names the field.
+   */
+  function wholeNumber(raw: string, label: string, max?: number): number {
+    const value = Number(raw.trim());
+    if (raw.trim().length === 0 || !Number.isInteger(value) || value < 0) {
+      throw new Error(`${label} must be a whole number, zero or more.`);
+    }
+    if (max !== undefined && value > max) {
+      throw new Error(`${label} cannot be more than ${max}.`);
+    }
+    return value;
+  }
 
   /** Run a mutation, surfacing the server message rather than a generic toast. */
   async function run(label: string, action: () => Promise<unknown>) {
@@ -127,8 +153,18 @@ function AdminModuleDetail() {
               disabled={saving}
               onClick={async () => {
                 setSaving(true);
-                await run("Module copy saved.", () =>
-                  updateModule.mutateAsync({ moduleId, ...copy }),
+                await run("Module settings saved.", () =>
+                  updateModule.mutateAsync({
+                    moduleId,
+                    title: copy.title,
+                    audience: copy.audience,
+                    outcome: copy.outcome,
+                    description: copy.description,
+                    category: copy.category,
+                    durationMinutes: wholeNumber(copy.durationMinutes, "Duration"),
+                    cptdPoints: wholeNumber(copy.cptdPoints, "CPTD points"),
+                    passMark: wholeNumber(copy.passMark, "Pass mark", 100),
+                  }),
                 );
                 setSaving(false);
               }}
@@ -245,6 +281,76 @@ function AdminModuleDetail() {
                 className="min-h-32 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
               />
             </label>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Category
+                </span>
+                <select
+                  value={copy.category}
+                  onChange={(e) =>
+                    setCopy((c) => ({ ...c, category: e.target.value as ModuleCategory }))
+                  }
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                >
+                  {MODULE_CATEGORIES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Duration (minutes)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={copy.durationMinutes}
+                  onChange={(e) => setCopy((c) => ({ ...c, durationMinutes: e.target.value }))}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  CPTD points
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={copy.cptdPoints}
+                  onChange={(e) => setCopy((c) => ({ ...c, cptdPoints: e.target.value }))}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  Also worth {Number(copy.cptdPoints || 0) * 100} XP on completion.
+                </span>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Pass mark (%)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={copy.passMark}
+                  onChange={(e) => setCopy((c) => ({ ...c, passMark: e.target.value }))}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  What the assessment is graded against.
+                </span>
+              </label>
+            </div>
 
             <div className="mt-6 rounded-2xl border border-dashed border-border bg-background p-5">
               <div className="flex items-center justify-between gap-3">

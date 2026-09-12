@@ -2,6 +2,20 @@ export type ModuleStatus = "complete" | "in-progress" | "available" | "locked";
 
 export type ModuleCategory = "Core Policies" | "SMT Pathway" | "Staff Development";
 
+/**
+ * The categories, as a list, for the pickers that offer them.
+ *
+ * Here rather than in a route because two screens need it, and because a route
+ * that exports a non-component value trips `react-refresh/only-export-components`.
+ * Mirrors `moduleCategory` in `convex/validators.ts`; widening one means
+ * widening the other.
+ */
+export const MODULE_CATEGORIES: ModuleCategory[] = [
+  "Core Policies",
+  "SMT Pathway",
+  "Staff Development",
+];
+
 export type ReviewDecision = "pending" | "approved" | "rejected" | "edited";
 
 export type ModuleLessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";

@@ -3,7 +3,11 @@ import { useConvexMutation } from "@convex-dev/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { api } from "../../convex/_generated/api";
-import type { ModuleCategory, ModuleLessonKind } from "@/domain/academy/entities";
+import {
+  MODULE_CATEGORIES,
+  type ModuleCategory,
+  type ModuleLessonKind,
+} from "@/domain/academy/entities";
 import { AdminShell } from "@/components/admin-shell";
 import {
   ArrowRight,
@@ -52,12 +56,22 @@ const ASSET_KINDS_PLANNED = [
 ];
 
 /**
- * The three categories are the domain union, not free text. The old select
- * offered "Compliance & Safety" and "Teaching Methodologies", neither of which
- * is a valid ModuleCategory, so the very first create call would have failed
- * argument validation.
+ * A whole number, or a thrown message the caller will toast.
+ *
+ * Mirrors `assertModuleNumbers` in `convex/modules.ts`. The server is the
+ * enforcement — it has to be, because `cptdPoints` is incremented onto a
+ * teacher's XP and never recomputed — but catching it here names the field.
  */
-const CATEGORIES: ModuleCategory[] = ["Core Policies", "SMT Pathway", "Staff Development"];
+function wholeNumber(raw: string, label: string, max?: number): number {
+  const value = Number(raw.trim());
+  if (raw.trim().length === 0 || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a whole number, zero or more.`);
+  }
+  if (max !== undefined && value > max) {
+    throw new Error(`${label} cannot be more than ${max}.`);
+  }
+  return value;
+}
 
 function CreateModulePage() {
   const navigate = useNavigate();
@@ -68,6 +82,13 @@ function CreateModulePage() {
 
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<ModuleCategory>("Core Policies");
+  // Strings, so a cleared box is empty rather than NaN. Defaults match what
+  // `modules.create` would fall back to, so what the form shows is what gets
+  // stored — the old screen silently created every module on 0 CPTD points,
+  // which meant finishing it paid no XP at all.
+  const [durationMinutes, setDurationMinutes] = useState("30");
+  const [cptdPoints, setCptdPoints] = useState("2");
+  const [passMark, setPassMark] = useState("80");
   const [audience, setAudience] = useState("");
   const [outcome, setOutcome] = useState("");
   const [description, setDescription] = useState("");
@@ -98,6 +119,9 @@ function CreateModulePage() {
         audience,
         outcome,
         description,
+        durationMinutes: wholeNumber(durationMinutes, "Duration"),
+        cptdPoints: wholeNumber(cptdPoints, "CPTD points"),
+        passMark: wholeNumber(passMark, "Pass mark", 100),
       });
       for (const text of objectives) {
         await addObjective.mutateAsync({ moduleId, text });
@@ -179,12 +203,61 @@ function CreateModulePage() {
                   onChange={(e) => setCategory(e.target.value as ModuleCategory)}
                   className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm text-foreground focus:border-primary outline-none"
                 >
-                  {CATEGORIES.map((option) => (
+                  {MODULE_CATEGORIES.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
                 </select>
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Duration (minutes)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={durationMinutes}
+                  onChange={(e) => setDurationMinutes(e.target.value)}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  CPTD points
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={cptdPoints}
+                  onChange={(e) => setCptdPoints(e.target.value)}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  Worth {Number(cptdPoints || 0) * 100} XP on completion.
+                </span>
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Pass mark (%)
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={passMark}
+                  onChange={(e) => setPassMark(e.target.value)}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  What the assessment is graded against.
+                </span>
               </label>
             </div>
 

@@ -138,6 +138,84 @@ describe("lesson ordering", () => {
   });
 });
 
+describe("the numbers on a module", () => {
+  // `cptdPoints` is multiplied into XP and **incremented** onto users.xpTotal,
+  // and awards are never recomputed — so a negative one would subtract from a
+  // teacher's total permanently. These are the guards on that.
+  test("a negative CPTD value is refused on create and on update", async () => {
+    await expect(
+      admin.mutation(api.modules.create, {
+        title: "Negative Points",
+        category: "Core Policies",
+        cptdPoints: -3,
+      }),
+    ).rejects.toThrow(/whole number, zero or more/i);
+
+    await expect(admin.mutation(api.modules.update, { moduleId, cptdPoints: -1 })).rejects.toThrow(
+      /whole number, zero or more/i,
+    );
+  });
+
+  test("a fractional CPTD value is refused — it would pay fractional XP", async () => {
+    await expect(admin.mutation(api.modules.update, { moduleId, cptdPoints: 2.5 })).rejects.toThrow(
+      /whole number/i,
+    );
+  });
+
+  test("a negative duration is refused", async () => {
+    await expect(
+      admin.mutation(api.modules.update, { moduleId, durationMinutes: -10 }),
+    ).rejects.toThrow(/whole number, zero or more/i);
+  });
+
+  test("a pass mark outside 0-100 is refused, on create as well as update", async () => {
+    await expect(admin.mutation(api.modules.update, { moduleId, passMark: 101 })).rejects.toThrow(
+      /between 0 and 100/i,
+    );
+    await expect(admin.mutation(api.modules.update, { moduleId, passMark: -1 })).rejects.toThrow(
+      /between 0 and 100/i,
+    );
+    await expect(
+      admin.mutation(api.modules.create, {
+        title: "Bad Mark",
+        category: "Core Policies",
+        passMark: 150,
+      }),
+    ).rejects.toThrow(/between 0 and 100/i);
+  });
+
+  test("valid numbers round-trip through the editor", async () => {
+    await admin.mutation(api.modules.update, {
+      moduleId,
+      category: "SMT Pathway",
+      durationMinutes: 45,
+      cptdPoints: 4,
+      passMark: 70,
+    });
+    const detail = await admin.query(api.modules.adminDetail, { slug: "ordering-fixture" });
+    expect(detail.module).toMatchObject({
+      category: "SMT Pathway",
+      durationMinutes: 45,
+      cptdPoints: 4,
+      passMark: 70,
+    });
+  });
+
+  test("create stores what it was given rather than the fallbacks", async () => {
+    // The gap this closes: the console sent none of these, so every module it
+    // made sat on 0 CPTD points and a pass mark nobody chose.
+    const made = await admin.mutation(api.modules.create, {
+      title: "Fully Specified",
+      category: "Staff Development",
+      durationMinutes: 25,
+      cptdPoints: 3,
+      passMark: 60,
+    });
+    const detail = await admin.query(api.modules.adminDetail, { slug: made.slug });
+    expect(detail.module).toMatchObject({ durationMinutes: 25, cptdPoints: 3, passMark: 60 });
+  });
+});
+
 describe("the publish gate", () => {
   test("a module with no published lesson cannot be published", async () => {
     await admin.mutation(api.lessons.create, { moduleId, title: "Draft only", kind: "reading" });
