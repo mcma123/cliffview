@@ -71,10 +71,26 @@ export function AssessmentQuestionEditor({
   const [saving, setSaving] = useState(false);
 
   const correctIndex = draft.options.findIndex((option) => option.isCorrect);
-  const ready =
-    draft.prompt.trim().length > 0 &&
-    correctIndex !== -1 &&
-    draft.options.every((option) => option.text.trim().length > 0);
+
+  /**
+   * Why the save button is disabled, or null when it is not.
+   *
+   * A reason rather than a bare boolean, because a greyed-out button that says
+   * nothing reads as broken — which is exactly how the first one was reported.
+   * These mirror the refusals in `questions.save`, so the admin is told before
+   * a round trip what the server would have told them after one.
+   */
+  const blockedReason: string | null = (() => {
+    if (draft.prompt.trim().length === 0) return "Write the question first.";
+    const blank = draft.options.findIndex((option) => option.text.trim().length === 0);
+    if (blank !== -1) {
+      return `Fill in answer ${String.fromCharCode(65 + blank)} before saving.`;
+    }
+    if (correctIndex === -1) return "Tap an answer's letter to mark it correct.";
+    const texts = draft.options.map((option) => option.text.trim().toLowerCase());
+    if (new Set(texts).size !== texts.length) return "Two answers read the same.";
+    return null;
+  })();
 
   function setKind(kind: AssessmentQuestionKind) {
     setDraft((current) => ({
@@ -277,10 +293,13 @@ export function AssessmentQuestionEditor({
         )}
       </div>
 
-      <div className="mt-6 flex items-center justify-end gap-3 border-t border-border pt-4">
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-border pt-4">
+        {blockedReason === null ? null : (
+          <p className="mr-auto text-xs font-semibold text-muted-foreground">{blockedReason}</p>
+        )}
         <button
           onClick={save}
-          disabled={!ready || saving}
+          disabled={blockedReason !== null || saving}
           className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
         >
           {saving ? "Saving…" : saveLabel}
