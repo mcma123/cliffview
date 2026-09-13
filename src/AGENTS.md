@@ -14,11 +14,11 @@ All application source for the Cliffview Academy portal: the four Clean Architec
 
 - Dependency rule for migrated code: `routes` -> `convex/_generated` (the typed backend API) and `application/academy/presenters` (pure view-model builders). Presenters take data, never a repository
 - One deliberate exception: `hooks/use-asset-upload.ts` also imports `convex/_generated`. A hook is allowed to, a component is not. The line is that anything under `components/` must be renderable from props alone
-- Dependency rule for code still on the container: `routes` -> `infrastructure/academy/container` -> `application/academy/use-cases` -> `domain`. Source dependencies point inward only
+- Dependency rule: `routes` -> `application/academy/presenters` -> `domain`, with Convex reached directly from a route. Source dependencies point inward only
 - `domain` imports nothing outside `@/domain`
 - `application` imports domain types and the `AcademyRepository` port, nothing else
-- `infrastructure` implements the port and wires the container
-- UI never imports a repository implementation. The only entry into data is `academyQueries` / `academyCommands` from `@/infrastructure/academy/container`
+- `infrastructure` builds the Convex client. There is no repository port any more — Convex is the port
+- UI reads data only through Convex, from a route component. Shared components in `src/components` stay prop-driven and import no Convex
 - Use the `@/*` alias (`tsconfig.json` paths) for cross-folder imports
 - Files named `*.server.ts` are stripped from the client bundle. Never import the Next.js `server-only` package — ESLint blocks it; use the `.server.ts` suffix or `@tanstack/react-start/server-only`
 
@@ -33,8 +33,8 @@ Entry points owned here:
 
 ## Work Guidance
 
-- Page data flow: route `loader` calls `academyQueries.*`, component reads `Route.useLoaderData()`. Keep label text, formatting, and href construction in `application`, not in components
-- The repository port is synchronous and is being retired rather than made async. Convex is the port now; `AcademyRepository` survives only for the routes not yet migrated and is deleted at Phase 8
+- Page data flow: a route component calls `useSuspenseQuery(convexQuery(...))` (admin) or `useQuery` behind `useStaffViewer()` (learner), passes the result through a presenter, and hands plain props down. Keep label text, formatting, and href construction in `application`, not in components
+- The repository port is gone. `AcademyRepository`, the in-memory implementation and the DI container were deleted once the AI review screen stopped reading them — Convex is the only data source
 - TanStack Query is now the repo-wide data layer for Convex reads: `src/router.tsx` builds a `ConvexQueryClient`, sets its `hashFn`/`queryFn` as query defaults, and calls `setupRouterSsrQueryIntegration`. `routes/__root.tsx` mounts `ConvexProvider` above `QueryClientProvider`. Both clients are created per router by `src/infrastructure/convex/client.ts` — never module-scope, because an auth token is per-request state
 
 ## Verification
@@ -45,7 +45,7 @@ From the repo root: `npm run format`, `npm run lint`, `npx tsc --noEmit`, `npm r
 
 - `domain/AGENTS.md` — entity types and repository ports; framework-free
 - `application/AGENTS.md` — use cases that build view-models from the repository port
-- `infrastructure/AGENTS.md` — in-memory seeded repository and the DI container
+- `infrastructure/AGENTS.md` — the Convex client factory
 - `routes/AGENTS.md` — TanStack Start file routes for the staff and admin surfaces
 - `components/AGENTS.md` — app shells, feature components, dialogs, brand marks, and the shadcn primitives
 - `lib/AGENTS.md` — utilities, server-only config, SSR error plumbing, server-function pattern

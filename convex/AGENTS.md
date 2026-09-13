@@ -160,7 +160,7 @@ Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):
 - `internal.seed.run` is an **idempotent `internalMutation`**, not `npx convex import`. The seed performs cleanup rather than transcription, and slug-to-id resolution is natural in a mutation
 - Guards: `internalMutation` (unreachable from any client), a required `confirm: "cliffview"` argument, and `mode: "reset"` which refuses populated tables unless `iAmSure: true` is also passed
 - Idempotency keys are natural keys: phase order, user email, module slug, (moduleId, lesson slug), (moduleId, asset title). Re-running `insert-missing` inserts nothing
-- `convex/seed/data.ts` now owns the nine module slugs and all seed prose. It is a deliberate copy of `src/infrastructure/academy/in-memory-academy-repository.ts` because `convex/` cannot import `@/domain`; Phase 8 deletes the in-memory repository, leaving this the only copy
+- `convex/seed/data.ts` owns the nine module slugs and all seed prose, and is now the **only** copy. It began as a deliberate duplicate of an in-memory repository in `src/infrastructure`, which has since been deleted — so the standing warning to change both is resolved
 - **Staff records are `requireAdmin`, never `requireStaff`.** `staff.directory` and `staff.detail` return names, email addresses, employment status and compliance history for the whole school. Being signed in as a teacher is not permission to read the personnel file
 - **`accessRole` is capped at `smt_admin` from the console.** `staff.{create,update}` refuse `super_admin`, so no client-reachable path can mint an operator — that stays `internal.auth.provisionAdmin`
 - **Two lockout guards.** Nobody may change their own `accessRole` or deactivate their own account. Without them an admin can demote themselves out of the console and, if they were the last one, lock the school out of its own admin surface
@@ -179,7 +179,7 @@ Seed contract (`convex/seed.ts`, `convex/seed/data.ts`):
 
 Current state:
 
-- The admin content and overview routes import `api` directly. Still on `src/infrastructure/academy/container.ts`: staff and AI review (Phase 7), and every learner route (Phase 8)
+- Every route reads Convex directly. The legacy container and in-memory repository are gone, deleted with the AI review screen that was their last caller
 - **`reports.compliance` counts from rows, and will disagree with the overview's "Modules Completed" tile.** That tile reads `COUNTER.completedModules`, which only the seed ever writes — `applyLessonCompletion` completes modules and emits a `module_completed` event but never calls `bumpCounter`, so the counter is frozen at its seeded value and drifts further with every real completion. The report is the correct one. Fixing the tile is its own decision: recompute it from enrollments, or re-baseline the counter and bump it from then on. Adding the bump alone would make it less obviously wrong without making it right
 - **Reports carries no history on purpose.** `monthlyRollups.averageCompliancePercent` is `60 + i * 3` from the seed and no cron maintains it, so the dashboard trend also walks off its own data one month at a time. Nothing synthesised may reach a document an admin forwards
 - Prod holds seeded data: 5 phases, 4 users, 9 modules, 44 lessons, 36 assets, 55 lesson-asset links, 20 enrollments, 2 AI questions, 6 monthly rollups

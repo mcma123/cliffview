@@ -349,7 +349,7 @@ Tasks:
 - [~] Deletion is deliberately absent. `employmentStatus: "inactive"` is the delete, because a `users` row is referenced by enrollments, progress, attempts and the audit log and is the identity an auth account binds to
 - [ ] `convex/aiReview.ts` — `queue`, real counts via `by_status`, and `setDecision` writing an append-only `aiReviewDecisions` row with reviewer identity and timestamp
 - [ ] Delete the `setInterval` generation simulation and the `Date.now()`-keyed fake questions; question ids become `Id<"aiQuestions">` (so `AiReviewQuestion.id: number` changes type) and `moduleTitle` becomes a joined field off `moduleId`
-- [ ] Delete `academyCommands` and `applyAiReviewDecision` — a local-state reducer replaced by a real mutation
+- [x] Delete `academyCommands` and `applyAiReviewDecision` — a local-state reducer replaced by a real mutation (`aiReviewQueue.setDecision`)
 - [~] Rewired `academy.admin.staff.index` (directory, real search, create) and `academy.admin.staff.$staffId` (edit, deactivate/reinstate). `academy.admin.ai-review` is still on the container
 - [x] Moved the staff presenters over; deleted the `.replace("Ms. ", "")` initials hack, the two dead use-cases and the 125-line duplicate in-memory staff list; the directory avatar now shows both real initials
 - [ ] Dashboard: derived counters, a `monthlyRollups` range scan for the trend, per-phase averages from `by_phase`. The four `+N` delta tiles stay gone until a monthly snapshot exists to compare against — add the cron that starts recording one

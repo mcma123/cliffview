@@ -57,7 +57,7 @@ export const employmentStatus = v.union(v.literal("active"), v.literal("inactive
 export type EmploymentStatus = Infer<typeof employmentStatus>;
 
 /**
- * Per-learner enrollment state. This is NOT `ModuleStatus` — the old
+ * Per-learner enrollment state. This is NOT the old `ModuleStatus` — that
  * `complete | in-progress | available | locked` union conflated progress with
  * entitlement and lived on the shared content row. `locked` is never stored: it
  * is derived at read time from `modules.sequence` plus the user's enrollments.
@@ -93,7 +93,7 @@ export const assessmentQuestionKind = v.union(
 );
 export type AssessmentQuestionKind = Infer<typeof assessmentQuestionKind>;
 
-/** Mirrors `AiReviewQuestion.difficulty`. */
+/** Difficulty a generated question reports about itself. */
 export const questionDifficulty = v.union(
   v.literal("Easy"),
   v.literal("Medium"),
@@ -101,7 +101,7 @@ export const questionDifficulty = v.union(
 );
 export type QuestionDifficulty = Infer<typeof questionDifficulty>;
 
-/** Mirrors `ReviewDecision`. `pending` is the un-reviewed state. */
+/** Where a generated question stands. `pending` is the un-reviewed state. */
 export const reviewStatus = v.union(
   v.literal("pending"),
   v.literal("approved"),

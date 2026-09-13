@@ -187,7 +187,7 @@ export default defineSchema({
     cptdPoints: v.number(),
     passMark: v.number(),
     format: v.string(),
-    /** Editorial state. Replaces the misused learner-progress ModuleStatus. */
+    /** Editorial state. Replaced a learner-progress union misused as one. */
     publishState,
     publishedAt: v.optional(v.number()),
     featuredAssetId: v.optional(v.id("assets")),

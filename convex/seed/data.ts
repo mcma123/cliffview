@@ -10,7 +10,7 @@ import type {
 /**
  * Seed content for the Cliffview Academy backend.
  *
- * This is a cleaned-up copy of `src/infrastructure/academy/in-memory-academy-repository.ts`.
+ * This began as a cleaned-up copy of an in-memory repository in `src/infrastructure`.
  * It is a copy rather than an import because `convex/` cannot import from
  * `@/domain` — different tsconfig, and it would bundle app code into the
  * backend. The duplication is deliberate and temporary: Phase 8 deletes the

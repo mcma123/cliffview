@@ -627,7 +627,7 @@ const LESSON_PROGRESS_LABELS: Record<string, string> = {
 /**
  * The learner's own modules, for the dashboard and the library.
  *
- * Deliberately no notion of "locked": the old seed stored a `ModuleStatus`
+ * Deliberately no notion of "locked": the old seed stored a status union
  * union that conflated entitlement with progress. Entitlement is now the
  * enrollment row — if it is not assigned, it is not in this list at all.
  */

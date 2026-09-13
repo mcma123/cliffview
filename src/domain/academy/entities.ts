@@ -1,4 +1,18 @@
-export type ModuleStatus = "complete" | "in-progress" | "available" | "locked";
+/**
+ * The app's vocabulary: the closed sets a module, lesson, asset or question can
+ * belong to.
+ *
+ * This file is the source of truth that `convex/validators.ts` mirrors. Widening
+ * a union here means widening it there, and auditing every consumer of both.
+ *
+ * It used to carry a second job — the full document shapes an in-memory
+ * repository served before the backend existed (`TrainingModule`,
+ * `StaffDashboardSnapshot`, `AiReviewQuestion` and the rest). Those went with
+ * the repository. Document shapes now come from Convex, derived with
+ * `FunctionReturnType` in `src/application/academy/presenters.ts`, so a change
+ * to the schema surfaces as a type error rather than as a hand-written
+ * duplicate that quietly disagrees.
+ */
 
 export type ModuleCategory = "Core Policies" | "SMT Pathway" | "Staff Development";
 
@@ -16,131 +30,9 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
   "Staff Development",
 ];
 
-export type ReviewDecision = "pending" | "approved" | "rejected" | "edited";
-
 export type ModuleLessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";
 
 export type ModuleAssetKind = "video" | "audio" | "document" | "worksheet";
 
 /** How an assessment question is answered. Mirrored by `convex/validators.ts`. */
 export type AssessmentQuestionKind = "multiple_choice" | "true_false";
-
-export interface StaffMember {
-  id: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  phase: string;
-}
-
-export interface ModuleAsset {
-  id: string;
-  title: string;
-  kind: ModuleAssetKind;
-  meta: string;
-  description: string;
-  status: "published" | "draft";
-}
-
-export interface ModuleSection {
-  id: string;
-  order: number;
-  title: string;
-  summary: string;
-  durationLabel: string;
-  kind: ModuleLessonKind;
-  isCurrent?: boolean;
-  isComplete?: boolean;
-  mediaTitle?: string;
-  mediaDescription?: string;
-  scenarioTitle?: string;
-  scenarioBody?: string;
-  reflectionPrompt?: string;
-  documentIds?: string[];
-}
-
-export interface TrainingModule {
-  id: string;
-  number: string;
-  slug: string;
-  title: string;
-  category: ModuleCategory;
-  description: string;
-  audience: string;
-  outcome: string;
-  durationMinutes: number;
-  sectionCount: number;
-  cptdPoints: number;
-  passMark: number;
-  format: string;
-  progressPercent: number;
-  status: ModuleStatus;
-  learningObjectives: string[];
-  featuredAssetId?: string;
-  resources: ModuleAsset[];
-  sections: ModuleSection[];
-  lastUpdatedLabel: string;
-}
-
-export interface LeaderboardEntry {
-  rank: number;
-  participantName: string;
-  xp: number;
-  isCurrentUser?: boolean;
-}
-
-export interface StaffDashboardSnapshot {
-  staffMember: StaffMember;
-  dateLabel: string;
-  completedModuleCount: number;
-  totalModuleCount: number;
-  xpEarnedThisMonth: number;
-  cptdPointsYearToDate: number;
-  streakDays: number;
-  activeModuleSlug: string;
-  activeModuleSectionLabel: string;
-  activeModuleProgressPercent: number;
-  remainingMinutes: number;
-  upcomingModuleSlugs: string[];
-  leaderboard: LeaderboardEntry[];
-  recentAchievements: string[];
-}
-
-export interface CompliancePhase {
-  name: string;
-  completionPercent: number;
-}
-
-export interface CompletionTrendPoint {
-  month: string;
-  completedModules: number;
-}
-
-export interface AdminDashboardSnapshot {
-  dateLabel: string;
-  totalStaff: number;
-  activeAccountsDelta: number;
-  completedModules: number;
-  completedModulesDelta: number;
-  averageCompliancePercent: number;
-  averageComplianceDeltaPercent: number;
-  pendingAiReviewCount: number;
-  editedAiReviewCount: number;
-  phases: CompliancePhase[];
-  completionTrend: CompletionTrendPoint[];
-}
-
-export interface ReviewOption {
-  key: string;
-  text: string;
-  isCorrect?: boolean;
-}
-
-export interface AiReviewQuestion {
-  id: number;
-  moduleTitle: string;
-  difficulty: "Easy" | "Medium" | "Hard";
-  confidencePercent: number;
-  prompt: string;
-  options: ReviewOption[];
-}

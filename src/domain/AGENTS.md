@@ -2,38 +2,38 @@
 
 ## Purpose
 
-Innermost layer: the academy's entity types and the repository ports the rest of the app depends on.
+Innermost layer: the app's vocabulary. The closed sets a module, lesson, asset or question can belong to.
 
 ## Ownership
 
-- Owns `academy/entities.ts` (types) and `academy/repositories.ts` (the `AcademyRepository` port)
-- Owns the domain vocabulary: module, section, asset, staff member, snapshot, review question
-- Owns no formatting, no hrefs, no framework code
+- Owns `academy/entities.ts` — string unions and the one list (`MODULE_CATEGORIES`) that pickers iterate
+- Owns no formatting, no hrefs, no framework code, no document shapes
 
 ## Local Contracts
 
 - Zero imports from outside `@/domain`. No React, TanStack, Zod, Tailwind, or Node built-ins
-- Currently type-only — no classes, no behavior. If an invariant appears, encode it here rather than in a use case
-- `AcademyRepository` methods are synchronous and return domain types or `undefined`. Absence is signalled with `undefined`; the port never throws
-- Adding or renaming a port method requires updating every implementation in `src/infrastructure` in the same change
-- The string unions are the source of truth for downstream switch and label logic — widening one means auditing every consumer in `application`, `routes`, and `components`:
-  - `ModuleStatus`: `complete` | `in-progress` | `available` | `locked`
+- Type-only, apart from `MODULE_CATEGORIES`. That const lives here rather than in a route because two screens need it and a route exporting a non-component value trips `react-refresh/only-export-components`
+- **These unions are the source of truth `convex/validators.ts` mirrors.** Widening one means widening the other and auditing every consumer in `application`, `routes` and `components`:
   - `ModuleCategory`: `Core Policies` | `SMT Pathway` | `Staff Development`
   - `ModuleLessonKind`: `video` | `audio` | `reading` | `case-study` | `assessment`
   - `ModuleAssetKind`: `video` | `audio` | `document` | `worksheet`
-  - `ReviewDecision`: `pending` | `approved` | `rejected` | `edited`
-  - `ModuleAsset.status`: `published` | `draft`
-- Entity shapes: `TrainingModule` owns its `sections: ModuleSection[]` and `resources: ModuleAsset[]`; a section links assets by id through `documentIds`; `featuredAssetId` points at one entry in `resources`
-- `AdminStaffProfile extends StaffMember` and carries `AdminStaffModuleProgress[]`. Learner-side and admin-side staff types are deliberately separate — do not merge them into one shape
+  - `AssessmentQuestionKind`: `multiple_choice` | `true_false`
+- **Document shapes do not belong here.** They come from Convex, derived with `FunctionReturnType<typeof api.x.y>` in `src/application/academy/presenters.ts`, so a schema change surfaces as a type error rather than as a hand-written duplicate that quietly disagrees
+
+## History
+
+This file used to carry the full entity shapes an in-memory repository served — `TrainingModule` with its `sections` and `resources`, `StaffDashboardSnapshot`, `AdminDashboardSnapshot`, `AiReviewQuestion`, `ReviewOption`, `StaffMember` — plus `AcademyRepository`, a synchronous port in `academy/repositories.ts`. All of it went with the repository once the last screen stopped reading it.
+
+Two of the deleted unions are worth knowing about, because comments elsewhere still refer to them as history: `ModuleStatus` (`complete | in-progress | available | locked`) conflated a learner's progress with content state and is why `publishState` exists; `ReviewDecision` was a duplicate of the union `convex/validators.ts` already defines.
 
 ## Work Guidance
 
 - Keep names in domain language, not UI language. A field is `durationMinutes`, not `durationLabel`, unless the label itself is the durable fact
-- Fields that exist only to render a specific screen belong in an `application` view-model, not on an entity
+- If a value is needed by exactly one screen, it belongs in a presenter view-model, not here
 
 ## Verification
 
-From the repo root: `npx tsc --noEmit` catches port and consumer drift. See the root AGENTS.md for the known-failure baseline.
+From the repo root: `npx tsc --noEmit` catches consumer drift.
 
 ## Child DOX Index
 

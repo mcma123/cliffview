@@ -13,11 +13,10 @@ TanStack Start file-based routes for both surfaces: the staff learner portal at 
 ## Local Contracts
 
 - Flat dot-notation filenames map to URL segments; `$param` is a dynamic segment; `.index` is an index route. `routeTree.gen.ts` is generated — never hand-edit it
-- Standard page shape: `createFileRoute` with `head` (title formatted `Page · Cliffview Academy`), `loader: () => academyQueries.…`, and `component`
+- Standard page shape: `createFileRoute` with `head` (title formatted `Page · Cliffview Academy`), a `loader` returning only request-local values such as `now`, and `component`
 - Two data paths, and which one a route uses depends on whether it has been migrated:
   - **Convex (admin routes).** The route component reads with `useSuspenseQuery(convexQuery(api.x.y, args))`, passes the result through a presenter from `@/application/academy/presenters`, and hands plain props to shared components. Queries run on the client only — see the admin-gate rule below — and hold a live subscription, so an edit repaints open pages with no refetch code
-  - **Container (everything not yet migrated).** `loader: () => academyQueries.…` plus `Route.useLoaderData()`, exactly as before
-- The container path ends at Phase 8, which deletes it. Until then do not add new routes on it
+- **There is no second data path any more.** The container and the in-memory repository were deleted once the AI review screen stopped reading them, so every route reads Convex
 - Learner routes now read Convex too: `academy.dashboard`, `academy.modules.index`, `academy.modules.$moduleSlug.index` and `academy.modules.$moduleSlug.lesson.$lessonId` use `useQuery(convexQuery(api.learn.*))` behind `useStaffViewer()`. They use `useQuery` rather than `useSuspenseQuery` precisely so the query can be held with `enabled` until the token is restored — a `requireStaff` query fired before that throws UNAUTHENTICATED at somebody who is in fact signed in. `academy.profile` and `academy.leaderboard` now read `api.learn.profile` and `api.learn.leaderboard` the same way
 - Migrated so far: the five admin content and overview routes (`admin.index`, `admin.modules.index`, `admin.modules.$moduleSlug.index`, `...lessons.$lessonId`, `...assets.$assetId`) plus both staff routes (`admin.staff.index`, `admin.staff.$staffId`). Still on the container: AI review (Phase 7) and every learner route (Phase 8)
 - Components still never fetch. Only a route component may call `useSuspenseQuery`; `src/components` stays prop-driven and imports no Convex
