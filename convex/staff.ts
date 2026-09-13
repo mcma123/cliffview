@@ -8,6 +8,8 @@ import { recordAudit } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
 import { MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
 import { hasPasswordAccount } from "./invites";
+import { rekeyPasswordAccount } from "./lib/credentials";
+import { revokeLiveInvites } from "./lib/invites";
 import schema from "./schema";
 import { accessRole, employmentStatus } from "./validators";
 
@@ -482,6 +484,25 @@ export const update = mutation({
       ...(args.phaseId === undefined ? {} : { phaseId: args.phaseId }),
     });
 
+    // An address is two facts in two tables. `users.email` is what this app
+    // resolves a sign-in against; `authAccounts.providerAccountId` is what
+    // Convex Auth resolves it against, and it runs first. Moving one without
+    // the other locked the person out under their new address while leaving
+    // the old one working — and the old one skips every refusal in
+    // `createOrUpdateUser`, including the deactivated-account one. So both move
+    // here, in the same transaction as the profile write.
+    //
+    // Only on a real change: re-keying on a no-op edit would revoke a live
+    // invitation somebody is part-way through redeeming.
+    const emailChanged = email !== undefined && email !== user.email;
+    if (emailChanged) {
+      await rekeyPasswordAccount(ctx, user._id, email);
+      // Already dead in effect — `classifyInvite` refuses a link whose address
+      // no longer matches the profile — so this only makes the revocation
+      // explicit and stamped rather than silent.
+      await revokeLiveInvites(ctx, user._id);
+    }
+
     // Cheap, and it means a stored compliance figure can never drift away from
     // the rows behind it without somebody noticing on the next edit.
     await recomputeCompliance(ctx, user._id);
@@ -491,7 +512,9 @@ export const update = mutation({
       action: "staff.update",
       entityTable: "users",
       entityId: user._id,
-      summary: `${clean.firstName ?? user.firstName} ${clean.lastName ?? user.lastName}`,
+      summary: emailChanged
+        ? `${clean.firstName ?? user.firstName} ${clean.lastName ?? user.lastName} — email ${user.email} to ${email}`
+        : `${clean.firstName ?? user.firstName} ${clean.lastName ?? user.lastName}`,
     });
     return null;
   },

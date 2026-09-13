@@ -251,6 +251,7 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
     publishState: module.publishState,
     publishLabel: formatPublishState(module.publishState),
     previewPath: getModulePreviewHref(module.slug),
+    format: module.format,
     questionCountLabel:
       data.questionCount === 0
         ? "No questions yet"

@@ -255,6 +255,141 @@ describe("email case and whitespace never lock somebody out", () => {
   });
 });
 
+describe("correcting an address moves the login with it", () => {
+  /**
+   * The bug this suite exists for.
+   *
+   * An address is two facts in two tables: `users.email`, which this app
+   * resolves a sign-in against, and `authAccounts.providerAccountId`, which
+   * Convex Auth resolves it against — and Convex Auth runs first.
+   * `staff.update` used to patch only the first. The result was worse than a
+   * lockout in one direction: the new address failed with the library's own
+   * opaque "invalid credentials", while the old one kept working *and*
+   * resolved straight to `existingAccount.userId`, skipping every refusal in
+   * `createOrUpdateUser` — including the one that stops a deactivated person
+   * signing in.
+   */
+  const signInAs = (email: string, password: string) =>
+    t.action(api.auth.signIn, {
+      provider: "password",
+      params: { email, password, flow: "signIn" },
+    });
+
+  const NEW_EMAIL = "nomsa.k@cliffview.test";
+
+  /** A teacher who has redeemed their invitation and holds a password. */
+  async function settledTeacher() {
+    const token = await issueInvite(teacherId, TEACHER_EMAIL);
+    await t.action(api.invites.accept, {
+      token,
+      password: GOOD_PASSWORD,
+      confirmPassword: GOOD_PASSWORD,
+    });
+  }
+
+  test("the credential follows the profile, and there is still only one", async () => {
+    await settledTeacher();
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+
+    const accounts = await passwordAccounts(teacherId);
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].providerAccountId).toBe(NEW_EMAIL);
+  });
+
+  test("the new address signs in, with the password they already had", async () => {
+    await settledTeacher();
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+
+    // The secret is untouched by a re-key, so nobody has to be told a new one.
+    await expect(signInAs(NEW_EMAIL, GOOD_PASSWORD)).resolves.toBeDefined();
+  });
+
+  test("THE HOLE IS CLOSED: the old address stops working", async () => {
+    await settledTeacher();
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+
+    // This is the assertion that would have caught the bug. A credential left
+    // behind under the old address is a standing login that outlives the
+    // profile it belongs to.
+    await expect(signInAs(TEACHER_EMAIL, GOOD_PASSWORD)).rejects.toThrow();
+  });
+
+  test("a deactivated person is stopped at the data, not at the door", async () => {
+    // Worth pinning precisely, because it is easy to misread. Convex Auth
+    // resolves a returning sign-in straight from `authAccounts` and returns
+    // `existingAccount.userId` — `createOrUpdateUser` runs on sign-UP only, so
+    // its INACTIVE refusal never fires here and a deactivated person can still
+    // obtain a token. What ends their access is `requireStaff`, which every
+    // gated read calls: they hold a session and can see nothing with it.
+    //
+    // That is defence at the right layer, but it does mean deactivation is not
+    // a sign-in refusal, and the old address must stop resolving on its own —
+    // which is exactly what the re-key above is for.
+    await settledTeacher();
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+    await admin().mutation(api.staff.setEmploymentStatus, {
+      staffId: teacherId,
+      employmentStatus: "inactive",
+    });
+
+    // The address they were hired under is gone, because the credential moved.
+    await expect(signInAs(TEACHER_EMAIL, GOOD_PASSWORD)).rejects.toThrow();
+
+    // The current one still authenticates, and buys them nothing.
+    await expect(signInAs(NEW_EMAIL, GOOD_PASSWORD)).resolves.toBeDefined();
+    await expect(asUser(teacherId).query(api.learn.me, { now: Date.now() })).rejects.toThrow(
+      /FORBIDDEN|not active/i,
+    );
+  });
+
+  test("a live invitation is revoked, not just left to fail", async () => {
+    // `classifyInvite` already refused a link whose address no longer matched,
+    // so these were dead in effect. Stamping them says so.
+    await issueInvite(teacherId, TEACHER_EMAIL);
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+
+    const invites = await t.run(async (ctx) =>
+      (await ctx.db.query("staffInvites").take(20)).filter((row) => row.userId === teacherId),
+    );
+    expect(invites).toHaveLength(1);
+    expect(invites[0].revokedAt).toBeTypeOf("number");
+  });
+
+  test("re-saving the same address changes nothing", async () => {
+    // A no-op edit must not revoke an invitation somebody is part-way through
+    // redeeming, which is why the re-key is guarded on a real change.
+    await issueInvite(teacherId, TEACHER_EMAIL);
+    await admin().mutation(api.staff.update, {
+      staffId: teacherId,
+      email: TEACHER_EMAIL.toUpperCase(),
+      firstName: "Nomsa",
+    });
+
+    const invites = await t.run(async (ctx) =>
+      (await ctx.db.query("staffInvites").take(20)).filter((row) => row.userId === teacherId),
+    );
+    expect(invites[0].revokedAt).toBeUndefined();
+  });
+
+  test("renaming somebody who never set a password mints no credential", async () => {
+    // The ordinary case: a teacher who has not redeemed their invitation has
+    // no account to move, and that is not an error.
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+    expect(await passwordAccounts(teacherId)).toHaveLength(0);
+  });
+
+  test("the change is recorded with both addresses", async () => {
+    await settledTeacher();
+    await admin().mutation(api.staff.update, { staffId: teacherId, email: NEW_EMAIL });
+
+    const entries = await t.run(async (ctx) =>
+      (await ctx.db.query("auditLog").take(100)).filter((row) => row.action === "staff.update"),
+    );
+    expect(entries.at(-1)?.summary).toContain(TEACHER_EMAIL);
+    expect(entries.at(-1)?.summary).toContain(NEW_EMAIL);
+  });
+});
+
 describe("a token that should not work, does not", () => {
   test("a tampered token is refused", async () => {
     const token = await issueInvite(teacherId, TEACHER_EMAIL);

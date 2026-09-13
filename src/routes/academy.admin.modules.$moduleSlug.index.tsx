@@ -88,6 +88,7 @@ function AdminModuleDetail() {
     outcome: data.outcome,
     description: data.description,
     category: detail.module.category,
+    format: data.format,
     // Held as strings so a field being cleared mid-edit is an empty box rather
     // than a NaN on its way to the server.
     durationMinutes: `${detail.module.durationMinutes}`,
@@ -161,6 +162,7 @@ function AdminModuleDetail() {
                     outcome: copy.outcome,
                     description: copy.description,
                     category: copy.category,
+                    format: copy.format,
                     durationMinutes: wholeNumber(copy.durationMinutes, "Duration"),
                     cptdPoints: wholeNumber(copy.cptdPoints, "CPTD points"),
                     passMark: wholeNumber(copy.passMark, "Pass mark", 100),
@@ -330,6 +332,21 @@ function AdminModuleDetail() {
                 />
                 <span className="block text-[11px] text-muted-foreground">
                   Also worth {Number(copy.cptdPoints || 0) * 100} XP on completion.
+                </span>
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Delivery format
+                </span>
+                <input
+                  value={copy.format}
+                  onChange={(e) => setCopy((c) => ({ ...c, format: e.target.value }))}
+                  placeholder="e.g. Self-paced"
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none"
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  Shown to staff on the module page.
                 </span>
               </label>
 

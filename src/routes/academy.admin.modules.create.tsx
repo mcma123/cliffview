@@ -89,6 +89,7 @@ function CreateModulePage() {
   const [durationMinutes, setDurationMinutes] = useState("30");
   const [cptdPoints, setCptdPoints] = useState("2");
   const [passMark, setPassMark] = useState("80");
+  const [format, setFormat] = useState("Self-paced");
   const [audience, setAudience] = useState("");
   const [outcome, setOutcome] = useState("");
   const [description, setDescription] = useState("");
@@ -122,6 +123,7 @@ function CreateModulePage() {
         durationMinutes: wholeNumber(durationMinutes, "Duration"),
         cptdPoints: wholeNumber(cptdPoints, "CPTD points"),
         passMark: wholeNumber(passMark, "Pass mark", 100),
+        format,
       });
       for (const text of objectives) {
         await addObjective.mutateAsync({ moduleId, text });
@@ -241,6 +243,17 @@ function CreateModulePage() {
                 <span className="block text-[11px] text-muted-foreground">
                   Worth {Number(cptdPoints || 0) * 100} XP on completion.
                 </span>
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Delivery format
+                </span>
+                <input
+                  value={format}
+                  onChange={(e) => setFormat(e.target.value)}
+                  placeholder="e.g. Self-paced"
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                />
               </label>
               <label className="space-y-2">
                 <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">

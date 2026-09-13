@@ -7,6 +7,7 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { recordAudit } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
+import { passwordAccountFor } from "./lib/credentials";
 import { sendInvitationEmail } from "./lib/email";
 import type { InviteState } from "./lib/invites";
 import {
@@ -67,11 +68,7 @@ const NOT_INVITABLE: Record<NotInvitable, string> = {
 
 /** Does this person already hold a password credential? */
 export async function hasPasswordAccount(ctx: QueryCtx, userId: Id<"users">): Promise<boolean> {
-  const account = await ctx.db
-    .query("authAccounts")
-    .withIndex("userIdAndProvider", (q) => q.eq("userId", userId).eq("provider", "password"))
-    .unique();
-  return account !== null;
+  return (await passwordAccountFor(ctx, userId)) !== null;
 }
 
 // ---------------------------------------------------------------------------

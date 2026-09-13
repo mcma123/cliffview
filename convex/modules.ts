@@ -271,6 +271,7 @@ export const create = mutation({
     durationMinutes: v.optional(v.number()),
     cptdPoints: v.optional(v.number()),
     passMark: v.optional(v.number()),
+    format: v.optional(v.string()),
   },
   returns: v.object({ moduleId: v.id("modules"), slug: v.string() }),
   handler: async (ctx, args) => {
@@ -302,7 +303,10 @@ export const create = mutation({
       durationMinutes: args.durationMinutes ?? 0,
       cptdPoints: args.cptdPoints ?? 0,
       passMark: args.passMark ?? 80,
-      format: "Self-paced",
+      // Still the default, but no longer the only possible value: it used to be
+      // written here and accepted by nothing, so every module the console made
+      // claimed to be self-paced whether it was or not.
+      format: args.format?.trim() || "Self-paced",
       publishState: "draft",
       ...stamp(),
     });
@@ -331,6 +335,7 @@ export const update = mutation({
     durationMinutes: v.optional(v.number()),
     cptdPoints: v.optional(v.number()),
     passMark: v.optional(v.number()),
+    format: v.optional(v.string()),
     featuredAssetId: v.optional(v.id("assets")),
   },
   returns: v.null(),
@@ -339,6 +344,11 @@ export const update = mutation({
     const module = await moduleOrThrow(ctx, args.moduleId);
 
     assertModuleNumbers(args);
+    // Refused rather than silently defaulted: this is prose on a learner's
+    // module page, and a blank one would render as a gap nobody could explain.
+    if (args.format !== undefined && args.format.trim().length === 0) {
+      throw new ConvexError({ code: "INVALID", message: "A delivery format needs some text." });
+    }
     if (args.title !== undefined && args.title.trim().length === 0) {
       throw new ConvexError({ code: "INVALID", message: "A module needs a title." });
     }
@@ -364,6 +374,7 @@ export const update = mutation({
       ...(args.durationMinutes === undefined ? {} : { durationMinutes: args.durationMinutes }),
       ...(args.cptdPoints === undefined ? {} : { cptdPoints: args.cptdPoints }),
       ...(args.passMark === undefined ? {} : { passMark: args.passMark }),
+      ...(args.format === undefined ? {} : { format: args.format.trim() }),
       ...(args.featuredAssetId === undefined ? {} : { featuredAssetId: args.featuredAssetId }),
       ...stamp(),
     });
