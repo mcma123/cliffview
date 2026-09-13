@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Test config for the Convex backend.
+ * Test config for the Convex backend, plus the pure helpers in `src/lib`.
  *
  * `convex-test` runs functions against an in-memory Convex, which is this
  * project's substitute for a dev deployment: production is the only real
@@ -104,7 +104,15 @@ KDwqS8NgykXWPs7mj20Ivg==
 -----END PRIVATE KEY-----`,
       JWKS: `{"keys":[{"kty":"RSA","n":"3ksxZX0g-7C9TJzrMRkNOPsZbsgmnYj1on_0nTYu0gxS21pMst8WubTFaM8oI0j_nrbIs8LCNTzHkqW5EQYFpphQEaO1_6AbJiwZE3Sd0rFJwFp-Eqw_cv_1Darhfzx1IAlBxZaX6gzhp_jLEwFADvrv1obb0hWjwrhFWF2z7gWfR0-4mcPj1wCqbrDug2EqyXyYqPRK7GXlD4Pf36JuaA9Wy_alyIN6nfP-J9QhwN7sh6cYhzzuhmDud0KpSa45l6tWHnSUPQhGvVPgV7A0BJYkVz_nt8vW69xce6YEwS6gSYGxXEgps3uOKJKmq5mUnEiAzihlsBt2KJIOF27zTw","e":"AQAB","use":"sig","alg":"RS256"}]}`,
     },
-    include: ["convex/**/*.test.ts"],
+    /**
+     * `convex/` is the bulk of it. `src/lib/` is included for pure modules
+     * only — `csv.ts` is the first, and it earns a test because a CSV that
+     * fails to quote a comma does not error: it shifts every column after it
+     * and still opens cleanly, so a wrong report looks exactly like a right
+     * one. Anything in `src/` that touches the DOM or React does not belong
+     * here; this config runs `edge-runtime`, not jsdom.
+     */
+    include: ["convex/**/*.test.ts", "src/lib/**/*.test.ts"],
     server: {
       deps: {
         // convex-test loads the function modules through Vite; inlining Convex

@@ -22,6 +22,7 @@ import { Route as AcademyAdminIndexRouteImport } from './routes/academy.admin.in
 import { Route as AcademyModulesModuleSlugRouteImport } from './routes/academy.modules.$moduleSlug'
 import { Route as AcademyAdminSignInRouteImport } from './routes/academy.admin_.sign-in'
 import { Route as AcademyAdminStaffRouteImport } from './routes/academy.admin.staff'
+import { Route as AcademyAdminReportsRouteImport } from './routes/academy.admin.reports'
 import { Route as AcademyAdminModulesRouteImport } from './routes/academy.admin.modules'
 import { Route as AcademyAdminAiReviewRouteImport } from './routes/academy.admin.ai-review'
 import { Route as AcademyModulesModuleSlugIndexRouteImport } from './routes/academy.modules.$moduleSlug.index'
@@ -100,6 +101,11 @@ const AcademyAdminSignInRoute = AcademyAdminSignInRouteImport.update({
 const AcademyAdminStaffRoute = AcademyAdminStaffRouteImport.update({
   id: '/staff',
   path: '/staff',
+  getParentRoute: () => AcademyAdminRoute,
+} as any)
+const AcademyAdminReportsRoute = AcademyAdminReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => AcademyAdminRoute,
 } as any)
 const AcademyAdminModulesRoute = AcademyAdminModulesRouteImport.update({
@@ -189,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
   '/academy/admin/modules': typeof AcademyAdminModulesRouteWithChildren
+  '/academy/admin/reports': typeof AcademyAdminReportsRoute
   '/academy/admin/staff': typeof AcademyAdminStaffRouteWithChildren
   '/academy/admin/sign-in': typeof AcademyAdminSignInRoute
   '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugRouteWithChildren
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/academy/profile': typeof AcademyProfileRoute
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
+  '/academy/admin/reports': typeof AcademyAdminReportsRoute
   '/academy/admin/sign-in': typeof AcademyAdminSignInRoute
   '/academy/admin': typeof AcademyAdminIndexRoute
   '/academy/modules': typeof AcademyModulesIndexRoute
@@ -240,6 +248,7 @@ export interface FileRoutesById {
   '/academy/sign-in': typeof AcademySignInRoute
   '/academy/admin/ai-review': typeof AcademyAdminAiReviewRoute
   '/academy/admin/modules': typeof AcademyAdminModulesRouteWithChildren
+  '/academy/admin/reports': typeof AcademyAdminReportsRoute
   '/academy/admin/staff': typeof AcademyAdminStaffRouteWithChildren
   '/academy/admin_/sign-in': typeof AcademyAdminSignInRoute
   '/academy/modules/$moduleSlug': typeof AcademyModulesModuleSlugRouteWithChildren
@@ -270,6 +279,7 @@ export interface FileRouteTypes {
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
     | '/academy/admin/modules'
+    | '/academy/admin/reports'
     | '/academy/admin/staff'
     | '/academy/admin/sign-in'
     | '/academy/modules/$moduleSlug'
@@ -295,6 +305,7 @@ export interface FileRouteTypes {
     | '/academy/profile'
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
+    | '/academy/admin/reports'
     | '/academy/admin/sign-in'
     | '/academy/admin'
     | '/academy/modules'
@@ -320,6 +331,7 @@ export interface FileRouteTypes {
     | '/academy/sign-in'
     | '/academy/admin/ai-review'
     | '/academy/admin/modules'
+    | '/academy/admin/reports'
     | '/academy/admin/staff'
     | '/academy/admin_/sign-in'
     | '/academy/modules/$moduleSlug'
@@ -441,6 +453,13 @@ declare module '@tanstack/react-router' {
       path: '/staff'
       fullPath: '/academy/admin/staff'
       preLoaderRoute: typeof AcademyAdminStaffRouteImport
+      parentRoute: typeof AcademyAdminRoute
+    }
+    '/academy/admin/reports': {
+      id: '/academy/admin/reports'
+      path: '/reports'
+      fullPath: '/academy/admin/reports'
+      preLoaderRoute: typeof AcademyAdminReportsRouteImport
       parentRoute: typeof AcademyAdminRoute
     }
     '/academy/admin/modules': {
@@ -593,6 +612,7 @@ const AcademyAdminStaffRouteWithChildren =
 interface AcademyAdminRouteChildren {
   AcademyAdminAiReviewRoute: typeof AcademyAdminAiReviewRoute
   AcademyAdminModulesRoute: typeof AcademyAdminModulesRouteWithChildren
+  AcademyAdminReportsRoute: typeof AcademyAdminReportsRoute
   AcademyAdminStaffRoute: typeof AcademyAdminStaffRouteWithChildren
   AcademyAdminIndexRoute: typeof AcademyAdminIndexRoute
 }
@@ -600,6 +620,7 @@ interface AcademyAdminRouteChildren {
 const AcademyAdminRouteChildren: AcademyAdminRouteChildren = {
   AcademyAdminAiReviewRoute: AcademyAdminAiReviewRoute,
   AcademyAdminModulesRoute: AcademyAdminModulesRouteWithChildren,
+  AcademyAdminReportsRoute: AcademyAdminReportsRoute,
   AcademyAdminStaffRoute: AcademyAdminStaffRouteWithChildren,
   AcademyAdminIndexRoute: AcademyAdminIndexRoute,
 }

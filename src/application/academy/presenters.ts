@@ -1016,3 +1016,177 @@ export function presentAssessmentResult(
         : `${result.badgesAwarded.length} new badge${result.badgesAwarded.length === 1 ? "" : "s"} unlocked`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Compliance reports
+// ---------------------------------------------------------------------------
+
+type ComplianceReport = FunctionReturnType<typeof api.reports.compliance>;
+
+/** "13 September 2026" — a report is a snapshot and has to say when it was taken. */
+export function formatReportDate(now: number): string {
+  return new Date(now).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/**
+ * A percentage, or an em dash when there is no denominator.
+ *
+ * The distinction carries the whole report. "0%" asserts that nobody completed
+ * the module; "—" says nobody was asked to. Printing the first when the second
+ * is true is exactly how a compliance document starts lying.
+ */
+function percentLabel(value: number | null): string {
+  return value === null ? "—" : `${value}%`;
+}
+
+export function presentComplianceReport(data: ComplianceReport, now: number) {
+  const { summary, scope } = data;
+
+  const modules = data.modules.map((row) => ({
+    id: row.moduleId,
+    numberLabel: `Module ${row.number}`,
+    title: row.title,
+    category: row.category,
+    publishState: row.publishState,
+    publishLabel: formatPublishState(row.publishState),
+    isPublished: row.publishState === "published",
+    assigned: row.assigned,
+    completed: row.completed,
+    inProgress: row.inProgress,
+    notStarted: row.notStarted,
+    overdue: row.overdue,
+    completionPercent: row.completionPercent,
+    completionLabel: percentLabel(row.completionPercent),
+    averageScoreLabel: percentLabel(row.averageScorePercent),
+    // The denominator, said out loud. An average over two of six people is a
+    // different claim from an average over all six, and the reader cannot tell
+    // them apart from the number alone.
+    scoredLabel:
+      row.scoredCount === 0 ? "Not yet attempted" : `${row.scoredCount} of ${row.assigned} scored`,
+    href: getAdminModuleHref(row.slug),
+  }));
+
+  const staff = data.staff.map((row) => ({
+    id: row.userId,
+    name: formatStaffName(row),
+    initials: formatStaffInitials(row),
+    jobTitle: row.jobTitle,
+    phaseName: row.phaseName,
+    roleLabel: formatAccessRole(row.accessRole),
+    assigned: row.assigned,
+    completed: row.completed,
+    overdue: row.overdue,
+    progressLabel: `${row.completed} of ${row.assigned}`,
+    compliancePercent: row.compliancePercent,
+    complianceLabel: `${row.compliancePercent}%`,
+    cptdPoints: row.cptdPoints,
+    lastActiveLabel:
+      row.lastActiveAt === null ? "Never signed in" : formatRelativeTime(row.lastActiveAt, now),
+    href: getAdminStaffHref(row.userId),
+  }));
+
+  return {
+    generatedLabel: `Generated ${formatReportDate(now)}`,
+    scopeLabel:
+      scope.phaseName === null
+        ? `All phases · ${scope.staffCount} active staff`
+        : `${scope.phaseName} · ${scope.staffCount} active staff`,
+    phaseId: null as string | null,
+    phases: data.phases,
+    stats: [
+      {
+        label: "Active staff",
+        value: `${summary.activeStaff}`,
+        sub: scope.phaseName === null ? "Across every phase" : `In ${scope.phaseName}`,
+      },
+      {
+        label: "Assignments",
+        value: `${summary.assignments}`,
+        sub: `${summary.notStarted} not started`,
+      },
+      {
+        label: "Completed",
+        value: `${summary.completed}`,
+        sub:
+          summary.assignments === 0
+            ? "Nothing assigned yet"
+            : `${Math.round((summary.completed / summary.assignments) * 100)}% of assignments`,
+      },
+      {
+        label: "Avg. compliance",
+        value: `${summary.averageCompliancePercent}%`,
+        sub: summary.overdue === 0 ? "Nothing overdue" : `${summary.overdue} overdue`,
+      },
+    ],
+    hasOverdue: summary.overdue > 0,
+    /**
+     * The exports, built here rather than in the route.
+     *
+     * Same source as the tables above, so the file cannot round differently or
+     * miss a column the screen shows. A report that disagrees with its own
+     * export is worse than one that cannot be exported at all.
+     */
+    moduleCsv: {
+      headers: [
+        "Module",
+        "Title",
+        "Category",
+        "State",
+        "Assigned",
+        "Completed",
+        "In progress",
+        "Not started",
+        "Overdue",
+        "Completion %",
+        "Average score %",
+        "Scored",
+      ],
+      rows: data.modules.map((row) => [
+        row.number,
+        row.title,
+        row.category,
+        formatPublishState(row.publishState),
+        row.assigned,
+        row.completed,
+        row.inProgress,
+        row.notStarted,
+        row.overdue,
+        row.completionPercent,
+        row.averageScorePercent,
+        row.scoredCount,
+      ]),
+    },
+    staffCsv: {
+      headers: [
+        "Staff member",
+        "Job title",
+        "Phase",
+        "Access role",
+        "Assigned",
+        "Completed",
+        "Overdue",
+        "Compliance %",
+        "CPTD points",
+        "Last active",
+      ],
+      rows: data.staff.map((row) => [
+        formatStaffName(row),
+        row.jobTitle,
+        row.phaseName,
+        formatAccessRole(row.accessRole),
+        row.assigned,
+        row.completed,
+        row.overdue,
+        row.compliancePercent,
+        row.cptdPoints,
+        row.lastActiveAt === null ? null : new Date(row.lastActiveAt).toISOString(),
+      ]),
+    },
+    modules,
+    staff,
+  };
+}

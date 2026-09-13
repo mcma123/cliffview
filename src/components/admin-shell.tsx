@@ -16,7 +16,7 @@ const adminNav: NavItem[] = [
   { to: "/academy/admin/staff", label: "Staff", icon: Users, ready: true },
   { to: "/academy/admin/modules", label: "Modules", icon: BookOpen, ready: true },
   { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
-  { to: "#", label: "Reports", icon: FileText },
+  { to: "/academy/admin/reports", label: "Reports", icon: FileText, ready: true },
 ];
 
 export function AdminShell({ children }: { children: ReactNode }) {
