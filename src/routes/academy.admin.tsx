@@ -5,6 +5,7 @@ import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
 import { ShieldAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { LoadingScreen } from "@/components/loading-screen";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -57,11 +58,7 @@ function RoleGate() {
   const { data, isPending, isError } = useQuery(convexQuery(api.auth.viewer, {}));
 
   if (isPending) {
-    return (
-      <GateMessage title="Checking your access">
-        One moment while we confirm your administrator permissions.
-      </GateMessage>
-    );
+    return <LoadingScreen label="Checking your access" />;
   }
 
   if (isError || data === undefined || data === null) {
@@ -112,7 +109,7 @@ function AdminGate() {
   // read. Rendering the gate rather than the outlet is what keeps admin queries
   // from firing without an identity.
   if (isLoading) {
-    return <GateMessage title="Loading the admin console">Restoring your session.</GateMessage>;
+    return <LoadingScreen label="Restoring your session" />;
   }
 
   if (!isAuthenticated) {
