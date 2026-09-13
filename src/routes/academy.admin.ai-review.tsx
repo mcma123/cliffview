@@ -1,113 +1,78 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AdminShell } from "@/components/admin-shell";
-import type { ReviewDecision } from "@/domain/academy/entities";
-import { academyCommands, academyQueries } from "@/infrastructure/academy/container";
-import {
-  Sparkles,
-  Check,
-  X,
-  Pencil,
-  Upload,
-  Bot,
-  FileText,
-  ArrowRight,
-  Loader2,
-} from "lucide-react";
-import { useState, useEffect } from "react";
-import { DragAndDropZone } from "@/components/drag-and-drop-zone";
+import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { AlertTriangle, Check, FileText, Loader2, Pencil, Sparkles, X } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
+import { presentAiReviewQueue } from "@/application/academy/presenters";
+import { AdminShell } from "@/components/admin-shell";
+import { cn } from "@/lib/utils";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+
+/**
+ * The AI review queue, reading and writing prod.
+ *
+ * What this replaced: a `setInterval` that animated a fake progress bar and
+ * then injected two hardcoded questions with `Date.now()` ids, while decisions
+ * lived in React state and vanished on refresh. Nothing it showed was real.
+ *
+ * The rule the screen exists to enforce: a generated question is a draft.
+ * Approving it is what copies it into the module's live question bank, through
+ * the same validation a hand-typed question passes.
+ */
 export const Route = createFileRoute("/academy/admin/ai-review")({
   head: () => ({ meta: [{ title: "AI Review Queue · Cliffview Academy" }] }),
-  loader: () => academyQueries.getAiReviewQueue(),
+  // No prefetch: admin screens are client-rendered behind the gate.
+  loader: () => ({ now: Date.now() }),
   component: AIReview,
 });
 
 function AIReview() {
-  const data = Route.useLoaderData();
-  const [activeTab, setActiveTab] = useState<"queue" | "generate">("queue");
-  const [actions, setActions] = useState<Record<number, ReviewDecision>>({});
-  const [questions, setQuestions] = useState(data.questions);
+  const { now } = Route.useLoaderData();
+  const { data: queue } = useSuspenseQuery(convexQuery(api.aiReviewQueue.queue, {}));
+  const data = presentAiReviewQueue(queue, now);
 
-  // Simulation State
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isComplete, setIsComplete] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [stepText, setStepText] = useState("Idle");
+  const [tab, setTab] = useState<"queue" | "generate">("queue");
+  const [sourceId, setSourceId] = useState<string>("");
+  const [count, setCount] = useState("8");
+  const [editing, setEditing] = useState<{ id: string; prompt: string } | null>(null);
 
-  useEffect(() => {
-    if (isGenerating) {
-      let currentProgress = 0;
-      const interval = setInterval(() => {
-        currentProgress += 2;
-        setProgress(currentProgress);
+  const decide = useMutation({ mutationFn: useConvexMutation(api.aiReviewQueue.setDecision) });
+  const generate = useMutation({ mutationFn: useConvexAction(api.aiReview.generateFromAsset) });
 
-        if (currentProgress < 30) setStepText("Extracting text from uploaded documents...");
-        else if (currentProgress < 60) setStepText("Identifying key learning objectives...");
-        else if (currentProgress < 90) setStepText("Drafting assessment questions...");
-        else setStepText("Finalizing formatting...");
-
-        if (currentProgress >= 100) {
-          clearInterval(interval);
-          setIsGenerating(false);
-          setIsComplete(true);
-
-          // Add 2 new mock questions
-          setQuestions((prev) => [
-            {
-              id: Date.now(),
-              moduleTitle: "New Uploaded Document",
-              prompt:
-                "What is the recommended first step when dealing with an escalated situation?",
-              difficulty: "Medium",
-              confidencePercent: 95,
-              options: [
-                { key: "A", text: "Immediately inform the principal", isCorrect: false },
-                {
-                  key: "B",
-                  text: "Acknowledge the concern and move the conversation offline",
-                  isCorrect: true,
-                },
-                { key: "C", text: "Ignore the message until the end of the day", isCorrect: false },
-                {
-                  key: "D",
-                  text: "Reply with a detailed defense of the school's actions",
-                  isCorrect: false,
-                },
-              ],
-            },
-            {
-              id: Date.now() + 1,
-              moduleTitle: "New Uploaded Document",
-              prompt: "Which communication channel should be used for formal disciplinary notices?",
-              difficulty: "Hard",
-              confidencePercent: 88,
-              options: [
-                { key: "A", text: "WhatsApp group chat", isCorrect: false },
-                {
-                  key: "B",
-                  text: "A phone call followed by an official school email",
-                  isCorrect: true,
-                },
-                { key: "C", text: "A handwritten note in the student's diary", isCorrect: false },
-                { key: "D", text: "A casual conversation during pick-up time", isCorrect: false },
-              ],
-            },
-            ...prev,
-          ]);
-        }
-      }, 100);
-      return () => clearInterval(interval);
+  async function run(label: string, action: () => Promise<unknown>) {
+    try {
+      await action();
+      toast.success(label);
+    } catch (caught) {
+      // The server's own message: "Add at least one…", "exactly one option…",
+      // or OpenRouter's refusal text. All more useful than a generic failure.
+      toast.error(caught instanceof Error ? caught.message : "That did not work.");
     }
-  }, [isGenerating]);
+  }
 
-  const handleUpload = (file: File) => {
-    setIsGenerating(true);
-    setIsComplete(false);
-    setProgress(0);
-  };
-
-  const setDecision = (id: number, decision: Exclude<ReviewDecision, "pending">) =>
-    setActions((current) => academyCommands.applyAiReviewDecision(current, id, decision));
+  async function onGenerate() {
+    if (sourceId === "") {
+      toast.error("Choose a document to read first.");
+      return;
+    }
+    try {
+      const result = await generate.mutateAsync({
+        assetId: sourceId as Id<"assets">,
+        count: Number(count) || 8,
+      });
+      toast.success(
+        result.discarded === 0
+          ? `${result.questionCount} questions drafted for review.`
+          : `${result.questionCount} drafted — ${result.discarded} discarded as ungradable.`,
+      );
+      setTab("queue");
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Generation failed.");
+    }
+  }
 
   return (
     <AdminShell>
@@ -116,96 +81,132 @@ function AIReview() {
           <div>
             <h1 className="text-3xl font-bold text-foreground">AI Question Review Queue</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              AI drafts questions from module content. Nothing goes live without your approval.
+              Questions are drafted from a module&rsquo;s own documents. Nothing reaches a teacher
+              without your approval.
             </p>
           </div>
 
           <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
-            <button
-              onClick={() => setActiveTab("queue")}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                activeTab === "queue"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              Review Queue
-            </button>
-            <button
-              onClick={() => setActiveTab("generate")}
-              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-                activeTab === "generate"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <Sparkles className="h-4 w-4" /> AI Generation
-            </button>
+            {(["queue", "generate"] as const).map((id) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all",
+                  tab === id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {id === "generate" && <Sparkles className="h-4 w-4" />}
+                {id === "queue" ? "Review Queue" : "Generate"}
+              </button>
+            ))}
           </div>
         </div>
 
-        {activeTab === "queue" ? (
+        {data.configured ? null : (
+          <div className="flex items-start gap-3 rounded-2xl border border-gold/40 bg-gold-soft/40 p-5">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-primary-deep" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Generation is not configured</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Set <code className="font-mono text-xs">OPENROUTER_API_KEY</code> on the deployment
+                to draft questions. The review queue below still works.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tab === "queue" ? (
           <>
             <div className="flex flex-wrap gap-3">
-              <span className="inline-flex items-center gap-2 rounded-full bg-gold-soft px-3 py-1 text-xs font-bold text-primary-deep">
-                <span className="h-1.5 w-1.5 rounded-full bg-gold" /> {data.summary.pendingCount}{" "}
-                pending
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-success/15 px-3 py-1 text-xs font-bold text-success">
-                <span className="h-1.5 w-1.5 rounded-full bg-success" />{" "}
-                {data.summary.approvedCount} approved
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" /> {data.summary.editedCount}{" "}
-                edited
-              </span>
+              {data.summary.map((chip) => (
+                <span
+                  key={chip.label}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold",
+                    chip.tone,
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full", chip.dot)} />
+                  {chip.value} {chip.label}
+                </span>
+              ))}
             </div>
 
-            <div className="space-y-4">
-              {questions.map((question) => {
-                const status = actions[question.id];
-
-                return (
+            {data.questions.length === 0 ? (
+              <section className="rounded-3xl border border-dashed border-border bg-card p-10 text-center">
+                <h2 className="text-lg font-bold text-foreground">Nothing to review</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                  Generate questions from a module document and they will appear here as drafts.
+                </p>
+              </section>
+            ) : (
+              <div className="space-y-4">
+                {data.questions.map((question) => (
                   <article
                     key={question.id}
-                    className="rounded-2xl border border-border bg-card p-6 shadow-sm"
+                    className={cn(
+                      "rounded-2xl border bg-card p-6 shadow-sm transition-opacity",
+                      question.isPending ? "border-border" : "border-border opacity-70",
+                    )}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <Sparkles className="h-4 w-4 text-gold" />
                         <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                          AI Draft · {question.moduleTitle}
+                          AI draft · {question.moduleTitle}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
                           {question.difficulty}
                         </span>
-                        <span className="rounded-full bg-primary-soft px-2.5 py-0.5 text-[10px] font-bold text-primary">
-                          AI Confidence: {question.confidencePercent}%
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-[10px] font-bold",
+                            question.confidenceTone,
+                          )}
+                          title="How well the source document supports this question"
+                        >
+                          Confidence {question.confidencePercent}%
                         </span>
+                        {question.isPending ? null : (
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                              question.statusTone,
+                            )}
+                          >
+                            {question.statusLabel}
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <h3 className="mt-4 text-lg font-bold text-foreground">{question.prompt}</h3>
+                    {editing?.id === question.id ? (
+                      <textarea
+                        value={editing.prompt}
+                        onChange={(e) => setEditing({ id: question.id, prompt: e.target.value })}
+                        className="mt-4 min-h-24 w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                      />
+                    ) : (
+                      <h3 className="mt-4 text-lg font-bold text-foreground">{question.prompt}</h3>
+                    )}
 
                     <ul className="mt-4 space-y-2">
                       {question.options.map((option) => (
                         <li
-                          key={option.key}
-                          className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+                          key={option.id}
+                          className={cn(
+                            "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm",
                             option.isCorrect
                               ? "border-success/60 bg-success/10 font-semibold text-foreground"
-                              : "border-border text-foreground"
-                          }`}
+                              : "border-border text-foreground",
+                          )}
                         >
-                          <span
-                            className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                              option.isCorrect
-                                ? "bg-success text-primary-foreground"
-                                : "bg-muted text-muted-foreground"
-                            }`}
-                          >
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold text-muted-foreground">
                             {option.key}
                           </span>
                           <span className="flex-1">{option.text}</span>
@@ -215,122 +216,206 @@ function AIReview() {
                     </ul>
 
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                      {status ? (
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
-                            status === "approved"
-                              ? "bg-success/15 text-success"
-                              : status === "rejected"
-                                ? "bg-destructive/15 text-destructive"
-                                : "bg-primary-soft text-primary"
-                          }`}
-                        >
-                          {status}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Awaiting review</span>
-                      )}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setDecision(question.id, "edited")}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted"
-                        >
-                          <Pencil className="h-3.5 w-3.5" /> Edit
-                        </button>
-                        <button
-                          onClick={() => setDecision(question.id, "rejected")}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
-                        >
-                          <X className="h-3.5 w-3.5" /> Reject
-                        </button>
-                        <button
-                          onClick={() => setDecision(question.id, "approved")}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-deep"
-                        >
-                          <Check className="h-3.5 w-3.5" /> Approve
-                        </button>
+                      <p className="text-xs text-muted-foreground">{question.reviewedLabel}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {editing?.id === question.id ? (
+                          <>
+                            <button
+                              onClick={() => setEditing(null)}
+                              className="rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              disabled={decide.isPending || editing.prompt.trim().length === 0}
+                              onClick={() =>
+                                void run("Edited and approved.", async () => {
+                                  await decide.mutateAsync({
+                                    questionId: question.id as Id<"aiQuestions">,
+                                    decision: "edited",
+                                    editedPrompt: editing.prompt,
+                                  });
+                                  setEditing(null);
+                                })
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+                            >
+                              <Check className="h-4 w-4" /> Save and approve
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() =>
+                                setEditing({ id: question.id, prompt: question.prompt })
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                            >
+                              <Pencil className="h-4 w-4" /> Edit
+                            </button>
+                            <button
+                              disabled={decide.isPending}
+                              onClick={() =>
+                                void run("Question rejected.", () =>
+                                  decide.mutateAsync({
+                                    questionId: question.id as Id<"aiQuestions">,
+                                    decision: "rejected",
+                                  }),
+                                )
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted hover:text-destructive disabled:opacity-60"
+                            >
+                              <X className="h-4 w-4" /> Reject
+                            </button>
+                            <button
+                              disabled={decide.isPending}
+                              onClick={() =>
+                                void run("Approved and added to the module.", () =>
+                                  decide.mutateAsync({
+                                    questionId: question.id as Id<"aiQuestions">,
+                                    decision: "approved",
+                                  }),
+                                )
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+                            >
+                              <Check className="h-4 w-4" /> Approve
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
+
+                    {question.moduleSlug === "" ? null : (
+                      <Link
+                        to="/academy/admin/modules/$moduleSlug/assessment"
+                        params={{ moduleSlug: question.moduleSlug }}
+                        className="mt-3 inline-block text-xs font-semibold text-gold hover:underline"
+                      >
+                        Open this module&rsquo;s assessment
+                      </Link>
+                    )}
                   </article>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            )}
           </>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-6">
-            <div className="rounded-3xl border border-border bg-card p-8 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gold text-primary-deep shadow-lg">
-                  <Bot className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-foreground">Generate mock questions</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Upload policy documents, handbooks, or lesson notes. Our AI will ingest the
-                    context and automatically draft assessment questions for you to review.
+          <>
+            <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
+                Draft from a document
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-foreground">
+                Read a module document and write questions about it
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                The whole document is read in one pass — nothing is summarised or chunked first.
+                Questions arrive as drafts for review, never in a live assessment.
+              </p>
+
+              {data.sources.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-border bg-background p-6 text-center">
+                  <FileText className="mx-auto h-6 w-6 text-muted-foreground" />
+                  <p className="mt-3 text-sm font-semibold text-foreground">
+                    No readable documents yet
+                  </p>
+                  <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+                    Upload a document or worksheet to a module, then come back. Only assets with a
+                    file attached can be read.
                   </p>
                 </div>
-              </div>
-
-              <div className="mt-8">
-                {isGenerating ? (
-                  <div className="rounded-2xl border border-primary/20 bg-primary-soft/30 p-8 text-center">
-                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-                    <h3 className="mt-4 text-lg font-bold text-foreground">AI is working...</h3>
-                    <p className="mt-1 text-sm font-semibold text-primary">{stepText}</p>
-
-                    <div className="mx-auto mt-6 h-2 w-full max-w-md overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-primary to-gold transition-all duration-300 ease-out"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-                ) : isComplete ? (
-                  <div className="rounded-2xl border border-success/30 bg-success/5 p-8 text-center">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success/20 text-success">
-                      <Check className="h-8 w-8" />
-                    </div>
-                    <h3 className="mt-4 text-xl font-bold text-foreground">
-                      Questions generated successfully!
-                    </h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      The AI extracted the key concepts and drafted 2 new questions for your review
-                      queue.
-                    </p>
-                    <button
-                      onClick={() => setActiveTab("queue")}
-                      className="mx-auto mt-6 inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
+              ) : (
+                <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto_auto]">
+                  <label className="space-y-2">
+                    <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Document
+                    </span>
+                    <select
+                      value={sourceId}
+                      onChange={(e) => setSourceId(e.target.value)}
+                      className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                     >
-                      View in Review Queue <ArrowRight className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsComplete(false);
-                        setProgress(0);
-                      }}
-                      className="mt-3 block w-full text-xs font-semibold text-muted-foreground hover:text-foreground"
-                    >
-                      Upload another document
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <DragAndDropZone
-                      title="Upload source material"
-                      description="Drag and drop PDFs, DOCX, or text files here to begin."
-                      icon={FileText}
-                      acceptedFileTypes=".pdf,.docx,.txt"
-                      onUpload={handleUpload}
+                      <option value="">Choose a document…</option>
+                      {data.sources.map((source) => (
+                        <option key={source.assetId} value={source.assetId}>
+                          {source.moduleTitle} — {source.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                      Questions
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={count}
+                      onChange={(e) => setCount(e.target.value)}
+                      className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary sm:w-24"
                     />
-                    <p className="text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-                      Max file size: 10MB per document
-                    </p>
+                  </label>
+
+                  <div className="flex items-end">
+                    <button
+                      onClick={onGenerate}
+                      disabled={generate.isPending || !data.configured}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+                    >
+                      {generate.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" /> Reading the document…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" /> Draft questions
+                        </>
+                      )}
+                    </button>
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
+                </div>
+              )}
+            </section>
+
+            {data.generations.length === 0 ? null : (
+              <section className="rounded-3xl border border-border bg-card p-6 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">
+                  Recent runs
+                </p>
+                <div className="mt-4 space-y-2">
+                  {data.generations.map((run) => (
+                    <div
+                      key={run.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{run.fileName}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{run.startedLabel}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {run.errorMessage === null ? null : (
+                          <span className="max-w-md text-xs text-destructive">
+                            {run.errorMessage}
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                            run.tone,
+                          )}
+                        >
+                          {run.statusLabel}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
       </div>
     </AdminShell>

@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as aiReview from "../aiReview.js";
+import type * as aiReviewQueue from "../aiReviewQueue.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
@@ -24,8 +26,10 @@ import type * as lib_credentials from "../lib/credentials.js";
 import type * as lib_email from "../lib/email.js";
 import type * as lib_invitationEmail from "../lib/invitationEmail.js";
 import type * as lib_invites from "../lib/invites.js";
+import type * as lib_openrouter from "../lib/openrouter.js";
 import type * as lib_ordering from "../lib/ordering.js";
 import type * as lib_progress from "../lib/progress.js";
+import type * as lib_questions from "../lib/questions.js";
 import type * as lib_storage from "../lib/storage.js";
 import type * as lib_time from "../lib/time.js";
 import type * as modules from "../modules.js";
@@ -44,6 +48,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aiReview: typeof aiReview;
+  aiReviewQueue: typeof aiReviewQueue;
   assets: typeof assets;
   auth: typeof auth;
   dashboard: typeof dashboard;
@@ -60,8 +66,10 @@ declare const fullApi: ApiFromModules<{
   "lib/email": typeof lib_email;
   "lib/invitationEmail": typeof lib_invitationEmail;
   "lib/invites": typeof lib_invites;
+  "lib/openrouter": typeof lib_openrouter;
   "lib/ordering": typeof lib_ordering;
   "lib/progress": typeof lib_progress;
+  "lib/questions": typeof lib_questions;
   "lib/storage": typeof lib_storage;
   "lib/time": typeof lib_time;
   modules: typeof modules;

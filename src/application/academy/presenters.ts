@@ -1190,3 +1190,126 @@ export function presentComplianceReport(data: ComplianceReport, now: number) {
     staff,
   };
 }
+
+// ---------------------------------------------------------------------------
+// AI review queue
+// ---------------------------------------------------------------------------
+
+type AiReviewQueue = FunctionReturnType<typeof api.aiReviewQueue.queue>;
+
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  rejected: "Rejected",
+  edited: "Edited",
+};
+
+const GENERATION_STATUS_LABELS: Record<string, string> = {
+  pending: "Queued",
+  running: "Running",
+  complete: "Complete",
+  failed: "Failed",
+};
+
+/**
+ * How much to trust a drafted question, as a colour.
+ *
+ * Deliberately blunt thresholds rather than a gradient: the number is the
+ * model's own estimate of how squarely the document supports the question, and
+ * the only decision it informs is whether a reviewer reads the source before
+ * approving. Green, amber, red says that; a smooth scale does not.
+ */
+function confidenceTone(percent: number): string {
+  if (percent >= 80) return "bg-success/15 text-success";
+  if (percent >= 60) return "bg-gold-soft text-primary-deep";
+  return "bg-destructive/10 text-destructive";
+}
+
+function reviewStatusTone(status: string): string {
+  if (status === "approved") return "bg-success/15 text-success";
+  if (status === "rejected") return "bg-destructive/10 text-destructive";
+  if (status === "edited") return "bg-primary-soft text-primary";
+  return "bg-muted text-muted-foreground";
+}
+
+export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
+  const counts = { pending: 0, approved: 0, rejected: 0, edited: 0 };
+  for (const row of data.questions) {
+    const status = row.question.status as keyof typeof counts;
+    if (status in counts) counts[status] += 1;
+  }
+
+  return {
+    configured: data.configured,
+    summary: [
+      {
+        label: "pending",
+        value: counts.pending,
+        tone: "bg-gold-soft text-primary-deep",
+        dot: "bg-gold",
+      },
+      {
+        label: "approved",
+        value: counts.approved,
+        tone: "bg-success/15 text-success",
+        dot: "bg-success",
+      },
+      {
+        label: "edited",
+        value: counts.edited,
+        tone: "bg-primary-soft text-primary",
+        dot: "bg-primary",
+      },
+      {
+        label: "rejected",
+        value: counts.rejected,
+        tone: "bg-muted text-muted-foreground",
+        dot: "bg-muted-foreground",
+      },
+    ],
+    questions: data.questions.map(({ question, options, moduleTitle, moduleSlug }) => ({
+      id: question._id,
+      prompt: question.prompt,
+      moduleTitle,
+      moduleSlug,
+      difficulty: question.difficulty,
+      confidencePercent: question.confidencePercent,
+      confidenceTone: confidenceTone(question.confidencePercent),
+      isPending: question.status === "pending",
+      statusLabel: REVIEW_STATUS_LABELS[question.status] ?? question.status,
+      statusTone: reviewStatusTone(question.status),
+      reviewedLabel:
+        question.reviewedAt === undefined
+          ? "Not yet reviewed"
+          : `Reviewed ${formatRelativeTime(question.reviewedAt, now)}`,
+      options: options.map((option) => ({
+        id: option._id,
+        key: option.key,
+        text: option.text,
+        isCorrect: option.isCorrect,
+      })),
+    })),
+    sources: data.sources.map((source) => ({
+      assetId: source.assetId,
+      title: source.title,
+      moduleTitle: source.moduleTitle,
+    })),
+    generations: data.generations.map((run) => ({
+      id: run._id,
+      fileName: run.sourceFileName ?? "Untitled document",
+      startedLabel: `${formatRelativeTime(run.startedAt, now)}${
+        run.status === "complete" ? ` · ${run.questionCount} drafted` : ""
+      }`,
+      statusLabel: GENERATION_STATUS_LABELS[run.status] ?? run.status,
+      tone:
+        run.status === "complete"
+          ? "bg-success/15 text-success"
+          : run.status === "failed"
+            ? "bg-destructive/10 text-destructive"
+            : "bg-gold-soft text-primary-deep",
+      // Surfaced rather than swallowed: a failed run with no reason shown is
+      // the thing the old simulated screen did, and it taught nobody anything.
+      errorMessage: run.errorMessage ?? null,
+    })),
+  };
+}
