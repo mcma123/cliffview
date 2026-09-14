@@ -323,7 +323,7 @@ Known gaps, accepted:
 
 - **Orphan blobs.** If the PUT succeeds but `attachFile` fails, the object is uploaded and unreferenced. The hook reports this rather than hiding it, and the recovery path exists (`r2.listMetadata` diffed against `by_r2Key`), but no pruning job is built
 - **A presigned URL is a bearer credential** for its 6-hour life. That is the decision taken for the learner-privacy open item
-- `academy.admin.ai-review.tsx`'s upload zone is still fake — it feeds the `setInterval` simulation Phase 7 deletes
+- ~~`academy.admin.ai-review.tsx`'s upload zone is still fake~~ — resolved in Phase 7: the screen now has a real uploader on its Generate tab, reusing `assets.create` then `useAssetUploads`
 
 Definition of done:
 
@@ -348,9 +348,10 @@ Tasks:
 - [~] `convex/staff.ts` — **partly landed early, out of phase order, on request.** `directory` and `detail` are live, and so are `create`, `update` and `setEmploymentStatus`, which the plan had not listed at all: it assumed staff screens were read-only. `recomputeCompliance` ships as a private helper called on every edit rather than a public mutation. Still outstanding here: `leaderboard`, `convex/phases.ts` and `convex/enrollments.ts` (assigning modules to people)
 - [~] Deletion is deliberately absent. `employmentStatus: "inactive"` is the delete, because a `users` row is referenced by enrollments, progress, attempts and the audit log and is the identity an auth account binds to
 - [ ] `convex/aiReview.ts` — `queue`, real counts via `by_status`, and `setDecision` writing an append-only `aiReviewDecisions` row with reviewer identity and timestamp
-- [ ] Delete the `setInterval` generation simulation and the `Date.now()`-keyed fake questions; question ids become `Id<"aiQuestions">` (so `AiReviewQuestion.id: number` changes type) and `moduleTitle` becomes a joined field off `moduleId`
+- [x] Delete the `setInterval` generation simulation and the `Date.now()`-keyed fake questions; question ids become `Id<"aiQuestions">` (so `AiReviewQuestion.id: number` changes type) and `moduleTitle` becomes a joined field off `moduleId`
+- [x] **An uploader on the Generate tab.** Not in the original plan, and required: the screen's empty state told an admin to "upload a document to a module, then come back" and gave them no way to do either, on a deployment where no asset had ever had a file attached — so the one screen whose subject is a document was the one screen that could not accept one. `assets.create` (kind `document`, draft) then `useAssetUploads`, in that order, because a file attaches to an asset and no asset exists until the screen makes one. `aiReviewQueue.queue` gained a `modules` array for the picker — additive to the return validator, **no schema change**. PDF only: `lib/openrouter.ts` posts to a model that reads PDFs natively and `sourceAsset` falls back to `application/pdf`, so a `.docx` is mislabelled and fails inside the model call. Word support is open
 - [x] Delete `academyCommands` and `applyAiReviewDecision` — a local-state reducer replaced by a real mutation (`aiReviewQueue.setDecision`)
-- [~] Rewired `academy.admin.staff.index` (directory, real search, create) and `academy.admin.staff.$staffId` (edit, deactivate/reinstate). `academy.admin.ai-review` is still on the container
+- [x] Rewired `academy.admin.staff.index` (directory, real search, create) and `academy.admin.staff.$staffId` (edit, deactivate/reinstate). `academy.admin.ai-review` moved over too, and the container is deleted
 - [x] Moved the staff presenters over; deleted the `.replace("Ms. ", "")` initials hack, the two dead use-cases and the 125-line duplicate in-memory staff list; the directory avatar now shows both real initials
 - [ ] Dashboard: derived counters, a `monthlyRollups` range scan for the trend, per-phase averages from `by_phase`. The four `+N` delta tiles stay gone until a monthly snapshot exists to compare against — add the cron that starts recording one
 - [ ] Make the "Last 30 days" button real or remove it; honest labels are required

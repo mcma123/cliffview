@@ -185,6 +185,12 @@ export const queue = query({
         moduleTitle: v.string(),
       }),
     ),
+    /**
+     * Modules an uploaded document can be attached to, so the generate screen
+     * can offer its own uploader instead of sending an admin to the module
+     * editor and back. Id and title only: this is a picker, not a module read.
+     */
+    modules: v.array(v.object({ id: v.id("modules"), title: v.string() })),
     configured: v.boolean(),
   }),
   handler: async (ctx) => {
@@ -246,6 +252,8 @@ export const queue = query({
       questions,
       generations: generations.slice(0, 10),
       sources,
+      // Already loaded above for the source scan, so this costs no extra reads.
+      modules: modules.map((module) => ({ id: module._id, title: module.title })),
       // Reported rather than assumed, so the screen can say "not configured"
       // instead of offering a button that fails.
       configured: (process.env.OPENROUTER_API_KEY ?? "").length > 0,

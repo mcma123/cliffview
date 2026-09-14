@@ -2,11 +2,13 @@ import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/rea
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, Check, FileText, Loader2, Pencil, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { presentAiReviewQueue } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { DragAndDropZone, type UploadZoneStatus } from "@/components/drag-and-drop-zone";
+import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { cn } from "@/lib/utils";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -22,6 +24,26 @@ import type { Id } from "../../convex/_generated/dataModel";
  * Approving it is what copies it into the module's live question bank, through
  * the same validation a hand-typed question passes.
  */
+/**
+ * Only PDFs are offered here, and that is the read path's limit rather than a
+ * UI preference: `lib/openrouter.ts` posts the file to a model that reads PDFs
+ * natively, and `aiReviewQueue.sourceAsset` falls back to `application/pdf`
+ * for an asset whose content type never synced. A .docx pushed through that
+ * path is mislabelled and fails inside the model call, which is a worse error
+ * than refusing it at the picker. Word support is follow-up work.
+ */
+const ACCEPTED_UPLOAD_TYPES = ".pdf,application/pdf";
+
+function isPdf(file: File): boolean {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+/** "Safeguarding policy.pdf" -> "Safeguarding policy". */
+function titleFromFileName(fileName: string): string {
+  const withoutExtension = fileName.replace(/\.[^.]+$/, "").trim();
+  return withoutExtension.length === 0 ? fileName : withoutExtension;
+}
+
 export const Route = createFileRoute("/academy/admin/ai-review")({
   head: () => ({ meta: [{ title: "AI Review Queue · Cliffview Academy" }] }),
   // No prefetch: admin screens are client-rendered behind the gate.
@@ -39,8 +61,40 @@ function AIReview() {
   const [count, setCount] = useState("8");
   const [editing, setEditing] = useState<{ id: string; prompt: string } | null>(null);
 
+  // The uploader's own state. `uploadedAssetId` is the row this screen created,
+  // held so the zone can report that upload's progress and offer to undo it.
+  const [uploadModuleId, setUploadModuleId] = useState<string>("");
+  const [uploadedAssetId, setUploadedAssetId] = useState<Id<"assets"> | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [creatingAsset, setCreatingAsset] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const decide = useMutation({ mutationFn: useConvexMutation(api.aiReviewQueue.setDecision) });
   const generate = useMutation({ mutationFn: useConvexAction(api.aiReview.generateFromAsset) });
+  const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
+  const removeAsset = useMutation({ mutationFn: useConvexMutation(api.assets.remove) });
+
+  const uploads = useAssetUploads();
+  const uploadState = uploadedAssetId === null ? null : uploads.stateFor(uploadedAssetId);
+
+  // Creating the row and moving the bytes are two legs of one action to the
+  // admin, so the zone shows "saving" across the first and the hook's own
+  // status across the second.
+  const zoneStatus: UploadZoneStatus = creatingAsset
+    ? "saving"
+    : createError !== null
+      ? "error"
+      : (uploadState?.status ?? "idle");
+
+  // `useAssetUploads.upload` records failure in per-asset state instead of
+  // throwing, so success is observed here rather than after the await. Once
+  // `attachFile` lands, the queue query re-runs and the asset turns up in
+  // `sources`; selecting it saves hunting through a list you just added to.
+  useEffect(() => {
+    if (uploadedAssetId !== null && uploadState?.status === "done") {
+      setSourceId(uploadedAssetId);
+    }
+  }, [uploadedAssetId, uploadState?.status]);
 
   async function run(label: string, action: () => Promise<unknown>) {
     try {
@@ -51,6 +105,71 @@ function AIReview() {
       // or OpenRouter's refusal text. All more useful than a generic failure.
       toast.error(caught instanceof Error ? caught.message : "That did not work.");
     }
+  }
+
+  /**
+   * Create the asset row, then upload into it.
+   *
+   * Two calls rather than one because a file attaches to an asset and no asset
+   * exists until this screen makes one — the same order the module editor
+   * uses, which is why `assets.create` and `useAssetUploads` are reused here
+   * rather than a second upload path being written.
+   *
+   * A failure between the two legs leaves a titled placeholder with no file.
+   * That is visible rather than hidden: the zone reports the error and offers
+   * Remove, which deletes the row.
+   */
+  async function onUploadDocument(file: File) {
+    if (uploadModuleId === "") {
+      toast.error("Choose which module this document belongs to first.");
+      return;
+    }
+    if (!isPdf(file)) {
+      toast.error("Only PDF files can be read for now.");
+      return;
+    }
+
+    setCreateError(null);
+    setCreatingAsset(true);
+    let assetId: Id<"assets">;
+    try {
+      assetId = await createAsset.mutateAsync({
+        moduleId: uploadModuleId as Id<"modules">,
+        title: titleFromFileName(file.name),
+        kind: "document",
+        description: "Uploaded on the AI review screen to draft questions from.",
+      });
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "Could not add that document to the module.";
+      setCreateError(message);
+      toast.error(message);
+      return;
+    } finally {
+      setCreatingAsset(false);
+    }
+
+    setUploadedAssetId(assetId);
+    setUploadedFileName(file.name);
+    await uploads.upload(assetId, file);
+  }
+
+  /** Undo an upload: deletes the row this screen created, and its blob. */
+  async function onRemoveUpload() {
+    if (uploadedAssetId === null) return;
+    const assetId = uploadedAssetId;
+    try {
+      await removeAsset.mutateAsync({ assetId });
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not remove that upload.");
+      return;
+    }
+    uploads.reset(assetId);
+    setUploadedAssetId(null);
+    setUploadedFileName(null);
+    setCreateError(null);
+    if (sourceId === assetId) setSourceId("");
+    toast.success("Upload removed.");
   }
 
   async function onGenerate() {
@@ -314,70 +433,112 @@ function AIReview() {
                 Questions arrive as drafts for review, never in a live assessment.
               </p>
 
-              {data.sources.length === 0 ? (
-                <div className="mt-6 rounded-2xl border border-dashed border-border bg-background p-6 text-center">
-                  <FileText className="mx-auto h-6 w-6 text-muted-foreground" />
-                  <p className="mt-3 text-sm font-semibold text-foreground">
-                    No readable documents yet
+              <div className="mt-6 space-y-5">
+                <div className="rounded-2xl border border-border bg-background p-5">
+                  <p className="text-sm font-semibold text-foreground">Add a document</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    It is saved to the module as a draft asset, so no learner sees it until you
+                    publish it. PDF only for now.
                   </p>
-                  <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-                    Upload a document or worksheet to a module, then come back. Only assets with a
-                    file attached can be read.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_auto_auto]">
-                  <label className="space-y-2">
+
+                  <label className="mt-4 block space-y-2">
                     <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Document
+                      Module
                     </span>
                     <select
-                      value={sourceId}
-                      onChange={(e) => setSourceId(e.target.value)}
+                      value={uploadModuleId}
+                      onChange={(e) => setUploadModuleId(e.target.value)}
                       className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
                     >
-                      <option value="">Choose a document…</option>
-                      {data.sources.map((source) => (
-                        <option key={source.assetId} value={source.assetId}>
-                          {source.moduleTitle} — {source.title}
+                      <option value="">Choose a module…</option>
+                      {data.modules.map((module) => (
+                        <option key={module.id} value={module.id}>
+                          {module.title}
                         </option>
                       ))}
                     </select>
                   </label>
 
-                  <label className="space-y-2">
-                    <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Questions
-                    </span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={count}
-                      onChange={(e) => setCount(e.target.value)}
-                      className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary sm:w-24"
+                  <div className="mt-4">
+                    <DragAndDropZone
+                      title="Upload a PDF"
+                      description={
+                        uploadModuleId === ""
+                          ? "Choose a module first, then drop a PDF here."
+                          : "Drag and drop a PDF here, or click to browse"
+                      }
+                      icon={FileText}
+                      acceptedFileTypes={ACCEPTED_UPLOAD_TYPES}
+                      onUpload={onUploadDocument}
+                      status={zoneStatus}
+                      progress={uploadState?.progress ?? 0}
+                      errorMessage={createError ?? uploadState?.errorMessage ?? null}
+                      uploadedFileName={uploadedFileName}
+                      onRemove={uploadedAssetId === null ? undefined : onRemoveUpload}
+                      disabled={uploadModuleId === ""}
                     />
-                  </label>
-
-                  <div className="flex items-end">
-                    <button
-                      onClick={onGenerate}
-                      disabled={generate.isPending || !data.configured}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
-                    >
-                      {generate.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" /> Reading the document…
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4 w-4" /> Draft questions
-                        </>
-                      )}
-                    </button>
                   </div>
                 </div>
-              )}
+
+                {data.sources.length === 0 ? (
+                  <p className="text-center text-xs text-muted-foreground">
+                    No readable documents yet. Upload one above, or attach a file to a document or
+                    worksheet asset under Modules, and it will appear here.
+                  </p>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-[1fr_auto_auto]">
+                    <label className="space-y-2">
+                      <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        Document
+                      </span>
+                      <select
+                        value={sourceId}
+                        onChange={(e) => setSourceId(e.target.value)}
+                        className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+                      >
+                        <option value="">Choose a document…</option>
+                        {data.sources.map((source) => (
+                          <option key={source.assetId} value={source.assetId}>
+                            {source.moduleTitle} — {source.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="space-y-2">
+                      <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                        Questions
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={count}
+                        onChange={(e) => setCount(e.target.value)}
+                        className="w-full rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary sm:w-24"
+                      />
+                    </label>
+
+                    <div className="flex items-end">
+                      <button
+                        onClick={onGenerate}
+                        disabled={generate.isPending || !data.configured}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+                      >
+                        {generate.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" /> Reading the document…
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4" /> Draft questions
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </section>
 
             {data.generations.length === 0 ? null : (

@@ -1294,6 +1294,9 @@ export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
       title: source.title,
       moduleTitle: source.moduleTitle,
     })),
+    // Passed through as-is: the uploader needs the id to write against and the
+    // title to show, and there is nothing to derive from either.
+    modules: data.modules.map((module) => ({ id: module.id, title: module.title })),
     generations: data.generations.map((run) => ({
       id: run._id,
       fileName: run.sourceFileName ?? "Untitled document",

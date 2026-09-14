@@ -195,6 +195,63 @@ describe("the queue is the school's, not a teacher's", () => {
   });
 });
 
+describe("what the generate screen can offer", () => {
+  /** An asset row the way `assets.create` leaves it: titled, with no file. */
+  const placeholder = async (kind: "document" | "worksheet" | "video", order: number) =>
+    await t.run(
+      async (ctx) =>
+        await ctx.db.insert("assets", {
+          moduleId,
+          title: `${kind} ${order}`,
+          description: "",
+          kind,
+          publishState: "draft" as const,
+          order,
+          contentUpdatedAt: Date.now(),
+        }),
+    );
+
+  const attach = async (assetId: Id<"assets">, r2Key: string) =>
+    await t.run(
+      async (ctx) => await ctx.db.patch("assets", assetId, { r2Key, fileName: `${r2Key}.pdf` }),
+    );
+
+  test("every module is offered to upload into, even one with no assets", async () => {
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.modules).toEqual([{ id: moduleId, title: "Safeguarding" }]);
+  });
+
+  test("a placeholder with no file is not readable", async () => {
+    await placeholder("document", 1);
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.sources).toHaveLength(0);
+  });
+
+  test("attaching a file is what makes a document readable", async () => {
+    const assetId = await placeholder("document", 1);
+    await attach(assetId, "k1");
+
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.sources).toHaveLength(1);
+    expect(view.sources[0]).toMatchObject({ assetId, moduleTitle: "Safeguarding" });
+  });
+
+  test("a video with a file is still not a document", async () => {
+    await attach(await placeholder("video", 1), "k2");
+    await attach(await placeholder("worksheet", 2), "k3");
+
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.sources.map((s) => s.title)).toEqual(["worksheet 2"]);
+  });
+
+  test("a document with no file cannot be read, even asked for by id", async () => {
+    const assetId = await placeholder("document", 1);
+    await expect(admin().query(internal.aiReviewQueue.sourceAsset, { assetId })).rejects.toThrow(
+      /no file attached/i,
+    );
+  });
+});
+
 describe("what a generation stores", () => {
   test("questions land pending, never in the assessment bank", async () => {
     await record([GOOD]);
