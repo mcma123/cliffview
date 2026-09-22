@@ -38,6 +38,7 @@ export const assetKind = v.union(
   v.literal("audio"),
   v.literal("document"),
   v.literal("worksheet"),
+  v.literal("image"),
 );
 export type AssetKind = Infer<typeof assetKind>;
 

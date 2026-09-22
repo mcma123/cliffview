@@ -32,7 +32,7 @@ export const MODULE_CATEGORIES: ModuleCategory[] = [
 
 export type ModuleLessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";
 
-export type ModuleAssetKind = "video" | "audio" | "document" | "worksheet";
+export type ModuleAssetKind = "video" | "audio" | "document" | "worksheet" | "image";
 
 /** How an assessment question is answered. Mirrored by `convex/validators.ts`. */
 export type AssessmentQuestionKind = "multiple_choice" | "true_false";

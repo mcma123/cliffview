@@ -259,6 +259,122 @@ describe("cross-parent writes are refused", () => {
   });
 });
 
+describe("requireAdmin on the lesson material mutations", () => {
+  /** A lesson with one attachment, created as the admin. */
+  async function fixture(t: ReturnType<typeof convexTest>) {
+    const ids = await seedFixture(t);
+    const admin = asUser(t, ids.adminId);
+    const lesson = await admin.mutation(api.lessons.create, {
+      moduleId: ids.moduleId,
+      title: "Lesson",
+      kind: "reading",
+    });
+    const assetId = await admin.mutation(api.lessons.addMaterial, {
+      lessonId: lesson.lessonId,
+      key: "seed-key",
+      fileName: "notes.pdf",
+      title: "Notes",
+      kind: "document",
+    });
+    return { ...ids, lessonId: lesson.lessonId, assetId };
+  }
+
+  const material = (lessonId: Id<"lessons">) => ({
+    lessonId,
+    key: "intruder-key",
+    fileName: "x.pdf",
+    title: "X",
+    kind: "document" as const,
+  });
+
+  test("addMaterial: no identity is refused", async () => {
+    const t = newTest();
+    const { lessonId } = await fixture(t);
+    await expect(t.mutation(api.lessons.addMaterial, material(lessonId))).rejects.toThrow(
+      /UNAUTHENTICATED|Sign in/i,
+    );
+  });
+
+  test("addMaterial: a staff identity is refused", async () => {
+    const t = newTest();
+    const { lessonId, staffId } = await fixture(t);
+    // Uploading teaching material is an authoring act, not a learning one.
+    await expect(
+      asUser(t, staffId).mutation(api.lessons.addMaterial, material(lessonId)),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+  });
+
+  test("addMaterial: an inactive admin is refused", async () => {
+    const t = newTest();
+    const { lessonId, inactiveAdminId } = await fixture(t);
+    await expect(
+      asUser(t, inactiveAdminId).mutation(api.lessons.addMaterial, material(lessonId)),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+  });
+
+  test("addMaterial: a lesson that no longer exists is refused", async () => {
+    const t = newTest();
+    const { lessonId, adminId } = await fixture(t);
+    await t.run(async (ctx) => {
+      await ctx.db.delete("lessons", lessonId);
+    });
+    await expect(
+      asUser(t, adminId).mutation(api.lessons.addMaterial, material(lessonId)),
+    ).rejects.toThrow(/NOT_FOUND|no longer exists/i);
+  });
+
+  test("reorderAssets: no identity is refused", async () => {
+    const t = newTest();
+    const { lessonId, assetId } = await fixture(t);
+    await expect(
+      t.mutation(api.lessons.reorderAssets, { lessonId, assetIds: [assetId] }),
+    ).rejects.toThrow(/UNAUTHENTICATED|Sign in/i);
+  });
+
+  test("reorderAssets: a staff identity is refused", async () => {
+    const t = newTest();
+    const { lessonId, assetId, staffId } = await fixture(t);
+    await expect(
+      asUser(t, staffId).mutation(api.lessons.reorderAssets, { lessonId, assetIds: [assetId] }),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+  });
+
+  test("reorderAssets: an inactive admin is refused", async () => {
+    const t = newTest();
+    const { lessonId, assetId, inactiveAdminId } = await fixture(t);
+    await expect(
+      asUser(t, inactiveAdminId).mutation(api.lessons.reorderAssets, {
+        lessonId,
+        assetIds: [assetId],
+      }),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+  });
+
+  test("reorderAssets: an asset from another lesson is refused", async () => {
+    const t = newTest();
+    const { lessonId, adminId, moduleId } = await fixture(t);
+    const admin = asUser(t, adminId);
+    const other = await admin.mutation(api.lessons.create, {
+      moduleId,
+      title: "Other Lesson",
+      kind: "reading",
+    });
+    const foreign = await admin.mutation(api.lessons.addMaterial, {
+      lessonId: other.lessonId,
+      key: "other-key",
+      fileName: "other.pdf",
+      title: "Other",
+      kind: "document",
+    });
+
+    // The cross-parent write for this mutation: renumbering a join row that
+    // belongs to a different lesson.
+    await expect(
+      admin.mutation(api.lessons.reorderAssets, { lessonId, assetIds: [foreign] }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("the seed refuses to wipe populated tables", () => {
   test("reset without iAmSure is refused once a module exists", async () => {
     const t = newTest();

@@ -323,6 +323,172 @@ describe("the lesson-asset join", () => {
   });
 });
 
+describe("adding material to a lesson", () => {
+  async function lesson(title = "L") {
+    return await admin.mutation(api.lessons.create, { moduleId, title, kind: "reading" });
+  }
+
+  test("one call uploads, attaches and publishes", async () => {
+    const l = await lesson();
+    const assetId = await admin.mutation(api.lessons.addMaterial, {
+      lessonId: l.lessonId,
+      key: "r2-key-video",
+      fileName: "intro.mp4",
+      title: "Intro",
+      kind: "video",
+      contentType: "video/mp4",
+      sizeBytes: 1024,
+    });
+
+    const detail = await admin.query(api.lessons.adminDetail, {
+      moduleSlug: "ordering-fixture",
+      lessonSlug: "l",
+    });
+    expect(detail.linkedAssets).toHaveLength(1);
+    expect(detail.linkedAssets[0]._id).toBe(assetId);
+    // Published, not draft. `learn.lesson` skips anything unpublished, so a
+    // draft here is a file the admin uploaded and cannot see on the staff side.
+    expect(detail.linkedAssets[0].publishState).toBe("published");
+    expect(detail.linkedAssets[0].r2Key).toBe("r2-key-video");
+    expect(detail.linkedAssets[0].fileName).toBe("intro.mp4");
+  });
+
+  test("several files land in the order they were added", async () => {
+    const l = await lesson();
+    for (const [i, name] of ["a.mp4", "b.pdf", "c.docx"].entries()) {
+      await admin.mutation(api.lessons.addMaterial, {
+        lessonId: l.lessonId,
+        key: `r2-key-${i}`,
+        fileName: name,
+        title: name,
+        kind: "document",
+      });
+    }
+
+    const detail = await admin.query(api.lessons.adminDetail, {
+      moduleSlug: "ordering-fixture",
+      lessonSlug: "l",
+    });
+    expect(detail.linkedAssets.map((a) => a.title)).toEqual(["a.mp4", "b.pdf", "c.docx"]);
+  });
+
+  test("a key another asset already holds is refused", async () => {
+    const l = await lesson();
+    await admin.mutation(api.lessons.addMaterial, {
+      lessonId: l.lessonId,
+      key: "shared-key",
+      fileName: "first.pdf",
+      title: "First",
+      kind: "document",
+    });
+
+    // Two assets sharing one blob would mean deleting either breaks the other.
+    await expect(
+      admin.mutation(api.lessons.addMaterial, {
+        lessonId: l.lessonId,
+        key: "shared-key",
+        fileName: "second.pdf",
+        title: "Second",
+        kind: "document",
+      }),
+    ).rejects.toThrow(/INVALID|already attached/i);
+  });
+
+  test("a file over the size cap is refused", async () => {
+    const l = await lesson();
+    await expect(
+      admin.mutation(api.lessons.addMaterial, {
+        lessonId: l.lessonId,
+        key: "too-big",
+        fileName: "huge.mp4",
+        title: "Huge",
+        kind: "video",
+        sizeBytes: 201 * 1024 * 1024,
+      }),
+    ).rejects.toThrow(/INVALID|larger than/i);
+  });
+
+  test("a blank title is refused", async () => {
+    const l = await lesson();
+    await expect(
+      admin.mutation(api.lessons.addMaterial, {
+        lessonId: l.lessonId,
+        key: "k",
+        fileName: "x.pdf",
+        title: "   ",
+        kind: "document",
+      }),
+    ).rejects.toThrow(/INVALID|needs a title/i);
+  });
+});
+
+describe("reordering a lesson's material", () => {
+  async function threeMaterials() {
+    const l = await admin.mutation(api.lessons.create, {
+      moduleId,
+      title: "L",
+      kind: "reading",
+    });
+    const ids = [];
+    for (const [i, name] of ["one", "two", "three"].entries()) {
+      ids.push(
+        await admin.mutation(api.lessons.addMaterial, {
+          lessonId: l.lessonId,
+          key: `key-${i}`,
+          fileName: `${name}.pdf`,
+          title: name,
+          kind: "document",
+        }),
+      );
+    }
+    return { lessonId: l.lessonId, ids };
+  }
+
+  const titles = async () =>
+    (
+      await admin.query(api.lessons.adminDetail, {
+        moduleSlug: "ordering-fixture",
+        lessonSlug: "l",
+      })
+    ).linkedAssets.map((a) => a.title);
+
+  test("the order a learner reads top to bottom is the order given", async () => {
+    const { lessonId, ids } = await threeMaterials();
+    expect(await titles()).toEqual(["one", "two", "three"]);
+
+    await admin.mutation(api.lessons.reorderAssets, {
+      lessonId,
+      assetIds: [ids[2], ids[0], ids[1]],
+    });
+
+    expect(await titles()).toEqual(["three", "one", "two"]);
+  });
+
+  test("a partial set is refused rather than renumbering some rows", async () => {
+    const { lessonId, ids } = await threeMaterials();
+    await expect(
+      admin.mutation(api.lessons.reorderAssets, { lessonId, assetIds: [ids[0], ids[1]] }),
+    ).rejects.toThrow();
+    // Nothing moved.
+    expect(await titles()).toEqual(["one", "two", "three"]);
+  });
+
+  test("an asset that is not attached to this lesson is refused", async () => {
+    const { lessonId, ids } = await threeMaterials();
+    const stray = await admin.mutation(api.assets.create, {
+      moduleId,
+      title: "Stray",
+      kind: "document",
+    });
+    await expect(
+      admin.mutation(api.lessons.reorderAssets, {
+        lessonId,
+        assetIds: [ids[0], ids[1], stray],
+      }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("slugs", () => {
   test("a duplicate module title gets a distinct slug", async () => {
     const again = await admin.mutation(api.modules.create, {

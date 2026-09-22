@@ -1,6 +1,7 @@
 import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../convex/_generated/api";
+import type { Doc } from "../../../convex/_generated/dataModel";
 
 /**
  * Admin presenters.
@@ -26,7 +27,7 @@ type StaffDirectory = FunctionReturnType<typeof api.staff.directory>;
 type StaffDetail = FunctionReturnType<typeof api.staff.detail>;
 
 type PublishState = "draft" | "published" | "archived";
-type AssetKind = "video" | "audio" | "document" | "worksheet";
+type AssetKind = "video" | "audio" | "document" | "worksheet" | "image";
 type LessonKind = "video" | "audio" | "reading" | "case-study" | "assessment";
 type AssessmentQuestionKind = "multiple_choice" | "true_false";
 
@@ -810,6 +811,50 @@ export function presentLearnerModuleDetail(data: LearnerModuleDetail, now: numbe
   };
 }
 
+/**
+ * How one attachment should be rendered.
+ *
+ * Driven by `contentType`, not by `kind`. `kind` is a label an admin picks from
+ * a dropdown and **nothing validates it** — a "video" asset can hold a PDF, and
+ * the lesson page used to render `<video src={thatPdf}>`. `contentType` is
+ * authoritative: `assets.applySyncedMetadata` overwrites the browser's guess
+ * with what R2 reports about the bytes.
+ *
+ * `kind` is still the fallback, for a legacy row whose type never synced.
+ */
+export type LessonMaterialMedia = "video" | "audio" | "pdf" | "image" | "download";
+
+function resolveMedia(contentType: string | undefined, kind: string): LessonMaterialMedia {
+  if (contentType !== undefined) {
+    if (contentType.startsWith("video/")) return "video";
+    if (contentType.startsWith("audio/")) return "audio";
+    if (contentType.startsWith("image/")) return "image";
+    if (contentType === "application/pdf") return "pdf";
+    // Word, PowerPoint, Excel and everything else. A browser cannot render
+    // them, so the honest affordance is a download rather than a dead preview.
+    return "download";
+  }
+  if (kind === "video") return "video";
+  if (kind === "audio") return "audio";
+  if (kind === "image") return "image";
+  return "download";
+}
+
+function presentLessonMaterial(asset: Doc<"assets">, url: string | null) {
+  return {
+    id: asset._id,
+    title: asset.title,
+    description: asset.description,
+    kind: asset.kind,
+    contentType: asset.contentType ?? null,
+    fileName: asset.fileName ?? null,
+    url,
+    meta: formatAssetMeta(asset),
+    // A row with no file yet cannot be played or read whatever its type says.
+    media: url === null ? ("download" as const) : resolveMedia(asset.contentType, asset.kind),
+  };
+}
+
 /** One lesson, with any playable or downloadable media attached to it. */
 export function presentLearnerLesson(data: LearnerLesson) {
   const { module, lesson } = data;
@@ -829,16 +874,14 @@ export function presentLearnerLesson(data: LearnerLesson) {
     statusLabel: LESSON_PROGRESS_LABELS[data.status] ?? data.status,
     isComplete: data.status === "completed",
     positionLabel: `Lesson ${data.position} of ${data.total}`,
-    heroUrl: data.heroUrl,
-    assets: data.assets.map(({ asset, url }) => ({
-      id: asset._id,
-      title: asset.title,
-      description: asset.description,
-      kind: asset.kind,
-      contentType: asset.contentType ?? null,
-      url,
-      meta: formatAssetMeta(asset),
-    })),
+    // The hero is dropped when the same asset is also attached below. It is a
+    // separate pointer from the attachment list, and nothing stopped it being
+    // both, so a lesson whose hero was also attached rendered it twice.
+    hero:
+      data.hero === null || data.assets.some(({ asset }) => asset._id === data.hero?.asset._id)
+        ? null
+        : presentLessonMaterial(data.hero.asset, data.hero.url),
+    assets: data.assets.map(({ asset, url }) => presentLessonMaterial(asset, url)),
     previousHref:
       data.previousSlug === null ? null : getLessonPreviewHref(module.slug, data.previousSlug),
     nextHref: data.nextSlug === null ? null : getLessonPreviewHref(module.slug, data.nextSlug),

@@ -59,9 +59,21 @@ export const MAX_FILE_BYTES = 200 * 1024 * 1024;
 const MAX_FILE_LABEL = `${Math.round(MAX_FILE_BYTES / (1024 * 1024))}MB`;
 
 export type AssetUploads = {
-  stateFor: (assetId: Id<"assets">) => AssetUploadState;
+  /** Keyed by asset id, or by any caller-chosen id for a file with no row yet. */
+  stateFor: (trackingId: string) => AssetUploadState;
   upload: (assetId: Id<"assets">, file: File) => Promise<void>;
-  reset: (assetId: Id<"assets">) => void;
+  /**
+   * Put the bytes in the bucket and hand back the key, creating nothing.
+   *
+   * For material that has no asset row yet: `lessons.addMaterial` creates the
+   * row around a key that already holds bytes, so a failed upload leaves
+   * nothing to tidy up. The opposite order — `assets.create` then `upload` —
+   * leaves a titled placeholder with no file whenever the second leg fails.
+   *
+   * Returns null on failure; the reason is in `stateFor(trackingId)`.
+   */
+  uploadNew: (trackingId: string, file: File) => Promise<string | null>;
+  reset: (trackingId: string) => void;
 };
 
 export function useAssetUploads(): AssetUploads {
@@ -75,15 +87,55 @@ export function useAssetUploads(): AssetUploads {
   }, []);
 
   const stateFor = useCallback(
-    (assetId: Id<"assets">): AssetUploadState => states[assetId] ?? IDLE,
+    (trackingId: string): AssetUploadState => states[trackingId] ?? IDLE,
     [states],
   );
 
   const reset = useCallback(
-    (assetId: Id<"assets">) => {
-      put(assetId, IDLE);
+    (trackingId: string) => {
+      put(trackingId, IDLE);
     },
     [put],
+  );
+
+  const uploadNew = useCallback(
+    async (trackingId: string, file: File): Promise<string | null> => {
+      if (file.size > MAX_FILE_BYTES) {
+        put(trackingId, {
+          status: "error",
+          progress: 0,
+          errorMessage: `That file is larger than the ${MAX_FILE_LABEL} limit.`,
+        });
+        return null;
+      }
+
+      put(trackingId, { status: "uploading", progress: 0, errorMessage: null });
+      try {
+        const key = await uploadFile(file, {
+          onProgress: ({ loaded, total }) =>
+            put(trackingId, {
+              status: "uploading",
+              progress: total > 0 ? loaded / total : 0,
+              errorMessage: null,
+            }),
+        });
+        put(trackingId, { status: "saving", progress: 1, errorMessage: null });
+        return key;
+      } catch (caught) {
+        // Browser-to-Cloudflare, so a failure here is usually the bucket's CORS
+        // policy rather than anything Convex did.
+        put(trackingId, {
+          status: "error",
+          progress: 0,
+          errorMessage:
+            caught instanceof Error
+              ? `Upload failed: ${caught.message}. If this keeps happening, check the bucket allows PUT from this origin.`
+              : "Upload failed before the file reached storage.",
+        });
+        return null;
+      }
+    },
+    [put, uploadFile],
   );
 
   const upload = useCallback(
@@ -154,5 +206,5 @@ export function useAssetUploads(): AssetUploads {
     [attachFile, put, uploadFile],
   );
 
-  return { stateFor, upload, reset };
+  return { stateFor, upload, uploadNew, reset };
 }

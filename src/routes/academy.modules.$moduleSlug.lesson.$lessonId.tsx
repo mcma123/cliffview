@@ -20,6 +20,7 @@ import {
   presentLearnerLesson,
 } from "@/application/academy/presenters";
 import { AssessmentRunner, type RunnerResult } from "@/components/assessment-runner";
+import { LessonMaterial } from "@/components/lesson-material";
 import { PageNotice } from "@/components/page-notice";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
@@ -37,13 +38,6 @@ export const Route = createFileRoute("/academy/modules/$moduleSlug/lesson/$lesso
   head: () => ({ meta: [{ title: "Lesson · Cliffview Academy" }] }),
   component: LessonPage,
 });
-
-const KIND_ICONS: Record<string, typeof Video> = {
-  video: Video,
-  audio: Headphones,
-  document: FileText,
-  worksheet: Sparkles,
-};
 
 function LessonPage() {
   const { moduleSlug, lessonId } = Route.useParams();
@@ -196,17 +190,7 @@ function LessonPage() {
           <p className="mt-2 text-sm text-muted-foreground">{lesson.durationLabel}</p>
         </header>
 
-        {lesson.heroUrl === null ? null : (
-          <video
-            controls
-            playsInline
-            preload="metadata"
-            className="aspect-video w-full overflow-hidden rounded-3xl border border-border bg-black"
-            src={lesson.heroUrl}
-          >
-            Your browser cannot play this video.
-          </video>
-        )}
+        {lesson.hero === null ? null : <LessonMaterial material={lesson.hero} />}
 
         {!isAssessment || view !== null ? null : (
           <section className="rounded-3xl border border-border bg-card p-8 text-center shadow-sm">
@@ -260,52 +244,9 @@ function LessonPage() {
             <h2 className="text-lg font-black tracking-tight text-foreground">
               Supporting material
             </h2>
-            {lesson.assets.map((asset) => {
-              const Icon = KIND_ICONS[asset.kind] ?? FileText;
-              return (
-                <article
-                  key={asset.id}
-                  className="rounded-3xl border border-border bg-card p-6 shadow-sm"
-                >
-                  {asset.url !== null && asset.kind === "video" ? (
-                    <video
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="mb-4 aspect-video w-full rounded-2xl bg-black"
-                      src={asset.url}
-                    />
-                  ) : asset.url !== null && asset.kind === "audio" ? (
-                    <audio controls preload="metadata" className="mb-4 w-full" src={asset.url} />
-                  ) : null}
-
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
-                      <div>
-                        <p className="font-bold text-foreground">{asset.title}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{asset.description}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{asset.meta}</p>
-                      </div>
-                    </div>
-                    {asset.url === null ? (
-                      <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                        No file yet
-                      </span>
-                    ) : (
-                      <a
-                        href={asset.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
-                      >
-                        <Download className="h-4 w-4" /> Open
-                      </a>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
+            {lesson.assets.map((asset) => (
+              <LessonMaterial key={asset.id} material={asset} />
+            ))}
           </section>
         )}
 

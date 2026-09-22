@@ -7,7 +7,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { FileText, Headphones, Paperclip, Video } from "lucide-react";
+import { FileText, Headphones, Image as ImageIcon, Paperclip, Video } from "lucide-react";
+
+import type { ModuleAssetKind } from "@/domain/academy/entities";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,24 +19,27 @@ import { cn } from "@/lib/utils";
  * Cancel and "Attach file" buttons both just closed it, and it never received
  * a lesson or asset id, so attaching was impossible by construction.
  *
- * It is a picker rather than an uploader because attaching an existing asset is
- * the operation the backend supports today; uploading a new file arrives with
- * storage in a later phase. Still prop-driven — no Convex import here.
+ * It is a picker rather than an uploader, and now deliberately so rather than
+ * for want of storage: the lesson editor's Materials zone uploads new files
+ * directly, so what is left for this dialog is the other job — reusing a file
+ * the module already has on a second lesson, without uploading it twice. Still
+ * prop-driven — no Convex import here.
  */
 export type AttachableAsset = {
   id: string;
   title: string;
-  kind: "video" | "audio" | "document" | "worksheet";
+  kind: ModuleAssetKind;
   meta: string;
   alreadyAttached: boolean;
 };
 
-const kindIcon = {
+const kindIcon: Record<ModuleAssetKind, typeof Video> = {
   video: Video,
   audio: Headphones,
   document: FileText,
   worksheet: FileText,
-} as const;
+  image: ImageIcon,
+};
 
 export function AttachContentDialog({
   children,

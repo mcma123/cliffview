@@ -32,6 +32,15 @@ interface DragAndDropZoneProps {
   /** Offered only when a file is attached and the caller can remove it. */
   onRemove?: () => void | Promise<void>;
   disabled?: boolean;
+  /**
+   * Accept a whole selection rather than one file.
+   *
+   * Off by default, because the zones that replace the file on an existing
+   * asset genuinely mean one: a second file there has nowhere to go. The
+   * lesson's Materials zone turns it on, where each file becomes its own
+   * attachment and `onUpload` fires once per file.
+   */
+  multiple?: boolean;
 }
 
 export function DragAndDropZone({
@@ -39,6 +48,7 @@ export function DragAndDropZone({
   description = "Drag and drop your file here, or click to browse",
   icon: Icon = UploadCloud,
   acceptedFileTypes = "*/*",
+  multiple = false,
   onUpload,
   status = "idle",
   progress = 0,
@@ -57,11 +67,15 @@ export function DragAndDropZone({
   const inert = disabled || busy || onUpload === undefined;
 
   const accept = useCallback(
-    (file: File | undefined) => {
-      if (file === undefined || inert) return;
-      void onUpload?.(file);
+    (files: FileList | null | undefined) => {
+      if (files === null || files === undefined || inert) return;
+      // One call per file. The caller decides whether to run them in parallel;
+      // this only stops dropping four files from uploading one and silently
+      // discarding three, which is what taking `[0]` used to do.
+      const chosen = multiple ? Array.from(files) : files[0] === undefined ? [] : [files[0]];
+      for (const file of chosen) void onUpload?.(file);
     },
-    [inert, onUpload],
+    [inert, multiple, onUpload],
   );
 
   const handleDragOver = useCallback(
@@ -84,18 +98,18 @@ export function DragAndDropZone({
       e.preventDefault();
       e.stopPropagation();
       setIsDragging(false);
-      accept(e.dataTransfer.files?.[0]);
+      accept(e.dataTransfer.files);
     },
     [accept],
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+      const files = e.target.files;
       // Clear it, or picking the same file again after a failure fires no
       // change event and the retry looks like a dead button.
       e.target.value = "";
-      accept(file);
+      accept(files);
     },
     [accept],
   );
@@ -131,6 +145,7 @@ export function DragAndDropZone({
         ref={inputRef}
         type="file"
         accept={acceptedFileTypes}
+        multiple={multiple}
         disabled={inert}
         className="hidden"
         onChange={handleFileInput}

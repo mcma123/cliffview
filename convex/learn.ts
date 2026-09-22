@@ -262,7 +262,15 @@ export const lesson = query({
         url: v.union(v.string(), v.null()),
       }),
     ),
-    heroUrl: v.union(v.string(), v.null()),
+    /**
+     * The lesson's hero asset, or null.
+     *
+     * The document, not a bare URL. A URL alone cannot say what it points at,
+     * so the page rendered every hero as a `<video>` — including a hero that
+     * held a PDF. Its id also lets the page skip the hero block when the same
+     * asset is in `assets` below, which used to render it twice.
+     */
+    hero: v.union(v.object({ asset: schema.doc("assets"), url: v.string() }), v.null()),
     previousSlug: v.union(v.string(), v.null()),
     nextSlug: v.union(v.string(), v.null()),
     position: v.number(),
@@ -302,11 +310,21 @@ export const lesson = query({
 
     // Hero media is a separate pointer from the attachment list, and a lesson
     // can have one without it also being attached.
-    let heroUrl: string | null = null;
+    let hero: { asset: Doc<"assets">; url: string } | null = null;
     if (current.heroAssetId !== undefined) {
-      const hero = await ctx.db.get("assets", current.heroAssetId);
-      if (hero !== null && hero.r2Key !== undefined) {
-        heroUrl = await r2.getUrl(hero.r2Key, { expiresIn: DOWNLOAD_URL_TTL_SECONDS });
+      const heroAsset = await ctx.db.get("assets", current.heroAssetId);
+      // Published, like every other attachment. The old version checked only
+      // that a file existed, so a hero pulled back to draft stayed on screen
+      // while the same asset listed below it disappeared.
+      if (
+        heroAsset !== null &&
+        heroAsset.publishState === "published" &&
+        heroAsset.r2Key !== undefined
+      ) {
+        hero = {
+          asset: heroAsset,
+          url: await r2.getUrl(heroAsset.r2Key, { expiresIn: DOWNLOAD_URL_TTL_SECONDS }),
+        };
       }
     }
 
@@ -322,7 +340,7 @@ export const lesson = query({
       lesson: current,
       status: progress?.status ?? "not_started",
       assets,
-      heroUrl,
+      hero,
       previousSlug: index > 0 ? lessons[index - 1].slug : null,
       nextSlug: index < lessons.length - 1 ? lessons[index + 1].slug : null,
       position: index + 1,

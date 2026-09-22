@@ -5,16 +5,11 @@ import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { assetByKey, assertFileFacts, assertKeyUnclaimed } from "./lib/assets";
 import { recordAudit, stamp } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
 import { MAX_SIBLINGS, nextAssetOrder, renumberAssets } from "./lib/ordering";
-import {
-  DOWNLOAD_URL_TTL_SECONDS,
-  MAX_FILE_BYTES,
-  MAX_FILE_LABEL,
-  deleteBlobIfPresent,
-  r2,
-} from "./lib/storage";
+import { DOWNLOAD_URL_TTL_SECONDS, deleteBlobIfPresent, r2 } from "./lib/storage";
 import schema from "./schema";
 import { assetKind, publishState } from "./validators";
 
@@ -243,14 +238,6 @@ const CLEARED_FILE_FIELDS = {
   durationSeconds: undefined,
 } as const;
 
-/** The asset holding this object key, if any. */
-async function assetByKey(ctx: MutationCtx, key: string): Promise<Doc<"assets"> | null> {
-  return await ctx.db
-    .query("assets")
-    .withIndex("by_r2Key", (q) => q.eq("r2Key", key))
-    .unique();
-}
-
 /**
  * Record an uploaded file against its asset.
  *
@@ -276,27 +263,8 @@ export const attachFile = mutation({
     const actor = await requireAdmin(ctx);
     const asset = await assetOrThrow(ctx, args.assetId);
 
-    const fileName = args.fileName.trim();
-    if (fileName.length === 0) {
-      throw new ConvexError({ code: "INVALID", message: "An uploaded file needs a name." });
-    }
-    if (args.sizeBytes !== undefined && args.sizeBytes > MAX_FILE_BYTES) {
-      throw new ConvexError({
-        code: "INVALID",
-        message: `That file is larger than the ${MAX_FILE_LABEL} limit.`,
-      });
-    }
-
-    // Two assets sharing one blob would mean deleting either breaks the other.
-    // Server-issued keys are uuids, so this is a guard against a replayed or
-    // hand-crafted argument rather than an accident.
-    const holder = await assetByKey(ctx, args.key);
-    if (holder !== null && holder._id !== asset._id) {
-      throw new ConvexError({
-        code: "INVALID",
-        message: "That file is already attached to another asset.",
-      });
-    }
+    const fileName = assertFileFacts(args.fileName, args.sizeBytes);
+    await assertKeyUnclaimed(ctx, args.key, asset._id);
 
     // Delete the outgoing blob before repointing the row. Doing it after would
     // leave the key unreachable if the patch failed, and the whole point of

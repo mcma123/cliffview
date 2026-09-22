@@ -3,18 +3,20 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { assertFileFacts, assertKeyUnclaimed } from "./lib/assets";
 import { recordAudit, stamp } from "./lib/audit";
 import { NO_QUESTIONS_MESSAGE, hasQuestions } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
 import {
   MAX_SIBLINGS,
   assertSameMembers,
+  nextAssetOrder,
   nextLessonAssetOrder,
   nextLessonOrder,
   renumberLessons,
 } from "./lib/ordering";
 import schema from "./schema";
-import { lessonKind, publishState } from "./validators";
+import { assetKind, lessonKind, publishState } from "./validators";
 
 /**
  * Admin reads for the lesson editor.
@@ -469,6 +471,136 @@ export const detachAsset = mutation({
     await recordAudit(ctx, {
       actor,
       action: "lesson.detachAsset",
+      entityTable: "lessons",
+      entityId: lesson._id,
+    });
+    return null;
+  },
+});
+
+/**
+ * Add an uploaded file to a lesson as new material.
+ *
+ * The whole authoring path in one transaction: create the asset on the lesson's
+ * module, point it at the blob that has just landed, attach it to the lesson,
+ * and publish it.
+ *
+ * The order matters. The other path — `assets.create`, then upload, then
+ * `assets.attachFile` — creates the row first, so a failure between the legs
+ * leaves a titled placeholder with no file, and the Modules screen has a Remove
+ * button existing largely to clear those up. Here the bytes go to a
+ * server-issued key first (`assets.generateUploadUrl` takes no arguments, so a
+ * caller cannot aim at another asset's blob) and the row is created only once
+ * they have landed. A failed upload leaves nothing behind to tidy.
+ *
+ * Published, not draft. `learn.lesson` skips any attachment that is not
+ * published, so a draft here is a file an admin uploaded, attached, and cannot
+ * see on the staff side — indistinguishable from the upload having failed.
+ * Dropping a file onto a lesson is the act of publishing it; the lesson's and
+ * the module's own publish states still gate whether anyone reaches it.
+ */
+export const addMaterial = mutation({
+  args: {
+    lessonId: v.id("lessons"),
+    /** Server-issued R2 object key, from `assets.generateUploadUrl`. */
+    key: v.string(),
+    fileName: v.string(),
+    title: v.string(),
+    kind: assetKind,
+    contentType: v.optional(v.string()),
+    sizeBytes: v.optional(v.number()),
+  },
+  returns: v.id("assets"),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    const lesson = await lessonOrThrow(ctx, args.lessonId);
+
+    const fileName = assertFileFacts(args.fileName, args.sizeBytes);
+    const title = args.title.trim();
+    if (title.length === 0) {
+      throw new ConvexError({ code: "INVALID", message: "An asset needs a title." });
+    }
+    await assertKeyUnclaimed(ctx, args.key);
+
+    const assetId = await ctx.db.insert("assets", {
+      // The asset belongs to the module, not the lesson: that is the ownership
+      // the schema models, and it is what lets the same file be attached to a
+      // second lesson later without uploading it twice.
+      moduleId: lesson.moduleId,
+      title,
+      description: "",
+      kind: args.kind,
+      publishState: "published",
+      order: await nextAssetOrder(ctx, lesson.moduleId),
+      r2Key: args.key,
+      fileName,
+      ...(args.contentType === undefined ? {} : { contentType: args.contentType }),
+      ...(args.sizeBytes === undefined ? {} : { sizeBytes: args.sizeBytes }),
+      ...stamp(),
+    });
+
+    await ctx.db.insert("lessonAssets", {
+      lessonId: lesson._id,
+      assetId,
+      order: await nextLessonAssetOrder(ctx, lesson._id),
+    });
+
+    await ctx.db.patch("lessons", lesson._id, stamp());
+    await ctx.db.patch("modules", lesson.moduleId, stamp());
+    await recordAudit(ctx, {
+      actor,
+      action: "lesson.addMaterial",
+      entityTable: "lessons",
+      entityId: lesson._id,
+      summary: fileName,
+    });
+    return assetId;
+  },
+});
+
+/**
+ * Reorder a lesson's attached material.
+ *
+ * `nextLessonAssetOrder` only ever appends, so until now the order was the
+ * order things happened to be attached in and nothing could change it. The
+ * order is what a learner reads top to bottom — the video before the notes that
+ * discuss it — so it has to be something an admin can set.
+ *
+ * Takes the full set rather than a move instruction, and refuses a set that
+ * does not match what is attached: a partial list would silently renumber some
+ * rows and leave others, which is how two attachments end up claiming the same
+ * position.
+ */
+export const reorderAssets = mutation({
+  args: { lessonId: v.id("lessons"), assetIds: v.array(v.id("assets")) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    const lesson = await lessonOrThrow(ctx, args.lessonId);
+
+    const links = await ctx.db
+      .query("lessonAssets")
+      .withIndex("by_lessonId_and_order", (q) => q.eq("lessonId", lesson._id))
+      .take(MAX_SIBLINGS);
+
+    assertSameMembers(
+      args.assetIds,
+      links.map((link) => link.assetId),
+    );
+
+    const linkByAsset = new Map(links.map((link) => [link.assetId, link._id]));
+    for (let i = 0; i < args.assetIds.length; i++) {
+      const linkId = linkByAsset.get(args.assetIds[i]);
+      // Unreachable: `assertSameMembers` has already established the two sets
+      // are equal. Narrowing rather than asserting keeps it that way.
+      if (linkId === undefined) continue;
+      await ctx.db.patch("lessonAssets", linkId, { order: i + 1 });
+    }
+
+    await ctx.db.patch("lessons", lesson._id, stamp());
+    await recordAudit(ctx, {
+      actor,
+      action: "lesson.reorderAssets",
       entityTable: "lessons",
       entityId: lesson._id,
     });
