@@ -16,10 +16,11 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { presentAdminStaffDetail } from "@/application/academy/presenters";
+import { complianceMeterClass, presentAdminStaffDetail } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { AssignModulesDialog } from "@/components/assign-modules-dialog";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -72,7 +73,7 @@ function AdminStaffDetailComponent() {
       });
       toast.success("Profile saved.");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not save the profile.");
+      toast.error(errorMessage(caught, "Could not save the profile."));
     } finally {
       setSaving(false);
     }
@@ -84,7 +85,7 @@ function AdminStaffDetailComponent() {
       await setStatus.mutateAsync({ staffId: id, employmentStatus: next });
       toast.success(next === "active" ? "Account reinstated." : "Account deactivated.");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "That did not work.");
+      toast.error(errorMessage(caught, "That did not work."));
     }
   }
 
@@ -106,7 +107,7 @@ function AdminStaffDetailComponent() {
         `${result.assigned} module${result.assigned === 1 ? "" : "s"} assigned.${already}`,
       );
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not assign those modules.");
+      toast.error(errorMessage(caught, "Could not assign those modules."));
       throw caught;
     }
   }
@@ -116,7 +117,7 @@ function AdminStaffDetailComponent() {
       await unassignModule.mutateAsync({ staffId: id, moduleId: moduleId as Id<"modules"> });
       toast.success(`${title} removed from this tracker.`);
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not remove that module.");
+      toast.error(errorMessage(caught, "Could not remove that module."));
     }
   }
 
@@ -166,7 +167,7 @@ function AdminStaffDetailComponent() {
         duration: 12000,
       });
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not send that invitation.");
+      toast.error(errorMessage(caught, "Could not send that invitation."));
     }
   }
 
@@ -208,13 +209,9 @@ function AdminStaffDetailComponent() {
               <div className="flex w-full items-center gap-4">
                 <div className="h-3 w-full flex-1 overflow-hidden rounded-full bg-muted sm:w-32">
                   <div
-                    className={`h-full rounded-full ${
-                      data.compliancePercent >= 80
-                        ? "bg-success"
-                        : data.compliancePercent >= 50
-                          ? "bg-gold"
-                          : "bg-destructive"
-                    }`}
+                    className={`h-full rounded-full ${complianceMeterClass(
+                      data.compliancePercent,
+                    )}`}
                     style={{ width: `${data.compliancePercent}%` }}
                   />
                 </div>

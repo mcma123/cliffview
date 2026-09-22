@@ -11,6 +11,7 @@ import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video, Save } from 
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
+import { errorMessage } from "@/lib/convex-error";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons/$lessonId")({
@@ -96,7 +97,7 @@ function AdminLessonEditor() {
       });
       toast.success("Lesson saved.");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not save the lesson.");
+      toast.error(errorMessage(caught, "Could not save the lesson."));
     } finally {
       setSaving(false);
     }
@@ -153,7 +154,7 @@ function AdminLessonEditor() {
                 await setLessonState.mutateAsync({ lessonId: lessonDocId, publishState: next });
                 toast.success(next === "published" ? "Lesson published." : "Lesson set to draft.");
               } catch (caught) {
-                toast.error(caught instanceof Error ? caught.message : "That did not work.");
+                toast.error(errorMessage(caught, "That did not work."));
               }
             }}
             className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
@@ -343,7 +344,7 @@ function AdminLessonEditor() {
                   });
                   toast.success("Resource attached.");
                 } catch (caught) {
-                  toast.error(caught instanceof Error ? caught.message : "That did not work.");
+                  toast.error(errorMessage(caught, "That did not work."));
                 }
               }}
             >
@@ -384,9 +385,7 @@ function AdminLessonEditor() {
                           });
                           toast.success("Resource detached.");
                         } catch (caught) {
-                          toast.error(
-                            caught instanceof Error ? caught.message : "That did not work.",
-                          );
+                          toast.error(errorMessage(caught, "That did not work."));
                         }
                       }}
                       className="ml-2 rounded-lg px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:bg-muted hover:text-destructive"

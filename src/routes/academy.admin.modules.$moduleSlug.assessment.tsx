@@ -9,6 +9,7 @@ import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { type QuestionDraft, emptyDraft } from "@/components/assessment-question-draft";
 import { AssessmentQuestionEditor } from "@/components/assessment-question-editor";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -45,7 +46,7 @@ function AdminAssessment() {
       await action();
       toast.success(label);
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "That did not work.");
+      toast.error(errorMessage(caught, "That did not work."));
       // Rethrown so an editor card knows the save failed and keeps its values.
       throw caught;
     }

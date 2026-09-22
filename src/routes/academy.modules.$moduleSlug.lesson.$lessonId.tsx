@@ -23,6 +23,7 @@ import { AssessmentRunner, type RunnerResult } from "@/components/assessment-run
 import { PageNotice } from "@/components/page-notice";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -110,7 +111,7 @@ function LessonPage() {
       <StaffShell {...shell}>
         <PageNotice
           title="We could not open this lesson"
-          body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
+          body={errorMessage(error, "") || undefined}
           action={{ label: "Back to my modules", to: "/academy/modules" }}
         />
       </StaffShell>
@@ -141,7 +142,7 @@ function LessonPage() {
           : `${graded.scorePercent}% — you need ${graded.passMark}% to pass.`,
       );
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not mark your answers.");
+      toast.error(errorMessage(caught, "Could not mark your answers."));
     }
   }
 
@@ -164,7 +165,7 @@ function LessonPage() {
         });
       }
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not save your progress.");
+      toast.error(errorMessage(caught, "Could not save your progress."));
     }
   }
 

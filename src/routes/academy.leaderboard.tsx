@@ -7,6 +7,7 @@ import { presentLearnerLeaderboard } from "@/application/academy/presenters";
 import { PageNotice } from "@/components/page-notice";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 
 /**
@@ -63,7 +64,7 @@ function LeaderboardPage() {
       <StaffShell {...shell}>
         <PageNotice
           title="We could not load the leaderboard"
-          body={error instanceof Error ? error.message.replace(/^\[.*?\]\s*/, "") : undefined}
+          body={errorMessage(error, "") || undefined}
         />
       </StaffShell>
     );

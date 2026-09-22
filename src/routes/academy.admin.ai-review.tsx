@@ -11,6 +11,7 @@ import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { DragAndDropZone, type UploadZoneStatus } from "@/components/drag-and-drop-zone";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -105,7 +106,7 @@ function AIReview() {
     } catch (caught) {
       // The server's own message: "Add at least one…", "exactly one option…",
       // or OpenRouter's refusal text. All more useful than a generic failure.
-      toast.error(caught instanceof Error ? caught.message : "That did not work.");
+      toast.error(errorMessage(caught, "That did not work."));
     }
   }
 
@@ -142,8 +143,7 @@ function AIReview() {
         description: "Uploaded on the AI review screen to draft questions from.",
       });
     } catch (caught) {
-      const message =
-        caught instanceof Error ? caught.message : "Could not add that document to the module.";
+      const message = errorMessage(caught, "Could not add that document to the module.");
       setCreateError(message);
       toast.error(message);
       return;
@@ -163,7 +163,7 @@ function AIReview() {
     try {
       await removeAsset.mutateAsync({ assetId });
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not remove that upload.");
+      toast.error(errorMessage(caught, "Could not remove that upload."));
       return;
     }
     uploads.reset(assetId);
@@ -191,7 +191,7 @@ function AIReview() {
       );
       setTab("queue");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Generation failed.");
+      toast.error(errorMessage(caught, "Generation failed."));
     }
   }
 

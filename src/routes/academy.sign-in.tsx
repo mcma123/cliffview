@@ -2,6 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Mail, KeyRound, Eye, ArrowRight, Lock, CheckCircle2, Sparkles } from "lucide-react";
 import { CliffviewShield } from "@/components/cliffview-logo";
+import { errorMessage } from "@/lib/convex-error";
 import { useState } from "react";
 
 export const Route = createFileRoute("/academy/sign-in")({
@@ -34,7 +35,7 @@ function SignInPage() {
       // Convex Auth surfaces our ConvexError messages from
       // `createOrUpdateUser` here — the not-provisioned, inactive,
       // admin-claim-closed and invite-required refusals.
-      const raw = caught instanceof Error ? caught.message : "";
+      const raw = errorMessage(caught, "");
       // Convex Auth throws plain Errors for a bad credential, which arrive as
       // "[Request ID: ...] Server Error" — true, and useless to the person
       // trying to sign in. Only our own ConvexError messages are worth showing.

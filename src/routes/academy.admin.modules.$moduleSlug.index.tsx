@@ -27,6 +27,7 @@ import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
 import { AddObjectiveDialog } from "@/components/add-objective-dialog";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
+import { errorMessage } from "@/lib/convex-error";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/")({
   head: () => ({ meta: [{ title: "Edit Module · Cliffview Academy" }] }),
@@ -124,7 +125,7 @@ function AdminModuleDetail() {
       await action();
       toast.success(label);
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "That did not work.");
+      toast.error(errorMessage(caught, "That did not work."));
     }
   }
 

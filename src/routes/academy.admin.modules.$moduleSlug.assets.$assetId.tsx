@@ -9,6 +9,7 @@ import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { presentAdminAssetDetail } from "@/application/academy/presenters";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ArrowLeft, Download, Eye, FileText, Headphones, Video } from "lucide-react";
@@ -56,7 +57,7 @@ function AdminAssetEditor() {
       await updateAsset.mutateAsync({ assetId: id, ...form });
       toast.success("Asset saved.");
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not save the asset.");
+      toast.error(errorMessage(caught, "Could not save the asset."));
     } finally {
       setSaving(false);
     }
@@ -166,9 +167,7 @@ function AdminAssetEditor() {
                           next === "published" ? "Asset published." : "Asset set to draft.",
                         );
                       } catch (caught) {
-                        toast.error(
-                          caught instanceof Error ? caught.message : "That did not work.",
-                        );
+                        toast.error(errorMessage(caught, "That did not work."));
                       }
                     }}
                     className="rounded-xl border border-border px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"

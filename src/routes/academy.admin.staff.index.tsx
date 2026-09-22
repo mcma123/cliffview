@@ -5,10 +5,11 @@ import { Award, ChevronRight, Search, TrendingUp, UserPlus, Users } from "lucide
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { presentAdminStaffDirectory } from "@/application/academy/presenters";
+import { complianceMeterClass, presentAdminStaffDirectory } from "@/application/academy/presenters";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
+import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -115,9 +116,7 @@ function AdminStaffIndexComponent() {
                         : "Admins are not invited by email — an operator opens a claim window for them.",
                   });
                 } catch (caught) {
-                  toast.error(
-                    caught instanceof Error ? caught.message : "Could not create the profile.",
-                  );
+                  toast.error(errorMessage(caught, "Could not create the profile."));
                   // Rethrown so the dialog stays open with the values intact.
                   throw caught;
                 }
@@ -248,13 +247,9 @@ function AdminStaffIndexComponent() {
                           <div className="flex items-center gap-3">
                             <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
                               <div
-                                className={`h-full rounded-full ${
-                                  staff.compliancePercent >= 80
-                                    ? "bg-success"
-                                    : staff.compliancePercent >= 50
-                                      ? "bg-gold"
-                                      : "bg-destructive"
-                                }`}
+                                className={`h-full rounded-full ${complianceMeterClass(
+                                  staff.compliancePercent,
+                                )}`}
                                 style={{ width: `${staff.compliancePercent}%` }}
                               />
                             </div>

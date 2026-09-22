@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
 import { AddObjectiveDialog } from "@/components/add-objective-dialog";
+import { errorMessage } from "@/lib/convex-error";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/academy/admin/modules/create")({
@@ -140,7 +141,7 @@ function CreateModulePage() {
       }
       return slug;
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Could not save the module.");
+      toast.error(errorMessage(caught, "Could not save the module."));
       return null;
     } finally {
       setPending(false);
