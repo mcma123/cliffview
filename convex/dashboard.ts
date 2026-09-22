@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 
+import type { Id } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { requireAdmin } from "./lib/authz";
 import {
@@ -8,6 +9,7 @@ import {
   MAX_PHASES,
   MAX_STAFF,
   TREND_MONTHS,
+  percentOf,
   readCounter,
 } from "./lib/counts";
 import { monthKeyFromMs, monthKeysBack } from "./lib/time";
@@ -70,6 +72,35 @@ export const adminOverview = query({
         completedModules: v.number(),
       }),
     ),
+    /**
+     * Every active member of staff with their module completion, ordered
+     * lowest first: a "who needs chasing" list.
+     *
+     * The measure is modules completed over modules assigned, counted from
+     * `enrollments` in the traversal below — deliberately NOT
+     * `users.compliancePercent`, which is the mean of `progressPercent` and so
+     * reads high for somebody nine-tenths through every module having finished
+     * none. This panel puts a percentage beside a person's name, so it shows
+     * the arithmetic it is claiming and the caption that proves it ("3 / 8").
+     *
+     * Ordered here rather than in the browser because the ordering is a claim
+     * about the data, not a styling choice: it gets one definition and one
+     * test, beside the figures it is derived from.
+     */
+    teachers: v.array(
+      v.object({
+        userId: v.id("users"),
+        firstName: v.string(),
+        lastName: v.string(),
+        honorific: v.union(v.string(), v.null()),
+        jobTitle: v.string(),
+        phaseName: v.string(),
+        assigned: v.number(),
+        completed: v.number(),
+        /** Null when nobody is assigned — not 0%, which would read as failure. */
+        completionPercent: v.union(v.number(), v.null()),
+      }),
+    ),
   }),
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -126,7 +157,16 @@ export const adminOverview = query({
     // disagree with the report either. `activeStaff` is the scope — an
     // operator login and anyone who has left are both excluded, exactly as
     // they are from the headcount above.
-    const inScope = new Set(activeStaff.map((staff) => staff._id));
+    // `perTeacher`'s key set IS the scope — an operator login and anyone who
+    // has left are absent from it, exactly as they are from the headcount
+    // above, so one lookup both places a row and rejects an out-of-scope one.
+    // It is seeded for every active member of staff before the traversal so
+    // that somebody with no enrollments at all is still reported, at
+    // `assigned: 0`: "nobody has given them anything" is the finding, and a
+    // row discovered from enrollments would hide exactly that person.
+    const perTeacher = new Map<Id<"users">, { assigned: number; completed: number }>();
+    for (const staff of activeStaff) perTeacher.set(staff._id, { assigned: 0, completed: 0 });
+
     const windowKeys = monthKeysBack(args.now, TREND_MONTHS);
     // Seeded with every key so a month with no completions renders as an empty
     // bar rather than being dropped.
@@ -135,14 +175,33 @@ export const adminOverview = query({
     const moduleRows = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
     let completedModules = 0;
     for (const module of moduleRows) {
+      // Every status, not just `completed`: a teacher's denominator is the work
+      // they were given, and a not-started row is precisely the assignment the
+      // completed-only scan could not see. The same widened read
+      // `reports.compliance` performs, so the two agree on `assigned` as well
+      // as on `completed` — `waived` counts as assigned in both.
+      //
+      // The bound is unchanged and still exact: one enrollment row per user and
+      // module, so a module holds at most one row per person. And because the
+      // index is ["moduleId", "status"] and "completed" sorts first of the four
+      // status literals, a truncating `.take` sheds waived and not-started rows
+      // before it could shed a completed one — the tile and the trend are
+      // unchanged by this widening even at the cap.
       const rows = await ctx.db
         .query("enrollments")
-        .withIndex("by_moduleId_and_status", (q) =>
-          q.eq("moduleId", module._id).eq("status", "completed"),
-        )
+        .withIndex("by_moduleId_and_status", (q) => q.eq("moduleId", module._id))
         .take(MAX_STAFF);
       for (const row of rows) {
-        if (!inScope.has(row.userId)) continue;
+        const tally = perTeacher.get(row.userId);
+        // Absent means out of scope: an operator, or somebody who has left.
+        if (tally === undefined) continue;
+        tally.assigned += 1;
+
+        // Everything below is the completed-only body this loop always had.
+        // This guard reproduces exactly the set the index equality used to
+        // select, which is what leaves the tile and the trend untouched.
+        if (row.status !== "completed") continue;
+        tally.completed += 1;
         completedModules += 1;
         // A completed row with no timestamp still counts all-time; it just
         // cannot be placed in a month. Dropping it from the tile instead would
@@ -160,6 +219,51 @@ export const adminOverview = query({
       completedModules: windowed.get(monthKey) ?? 0,
     }));
 
+    // Phase names come from `phaseRows`, already read above for the per-phase
+    // panel — no read per teacher. Built from every row rather than the active
+    // ones `phases` filters to: somebody sitting in a retired phase still has
+    // a phase, and "Unassigned" would be a lie about their record.
+    const phaseNames = new Map(phaseRows.map((phase) => [phase._id, phase.name]));
+
+    const teachers = activeStaff.map((staff) => {
+      const tally = perTeacher.get(staff._id) ?? { assigned: 0, completed: 0 };
+      return {
+        userId: staff._id,
+        firstName: staff.firstName,
+        lastName: staff.lastName,
+        honorific: staff.honorific ?? null,
+        jobTitle: staff.jobTitle,
+        phaseName: phaseNames.get(staff.phaseId) ?? "Unassigned",
+        assigned: tally.assigned,
+        completed: tally.completed,
+        completionPercent: percentOf(tally.completed, tally.assigned),
+      };
+    });
+
+    // Lowest completion first: this panel answers "who needs chasing", and the
+    // people furthest behind belong where they are read first.
+    //
+    // Teachers with NOTHING ASSIGNED sort to the end despite having no
+    // percentage at all. Theirs is a different problem — nobody has given them
+    // any work — and ranking a null as 0% would let them fill the top of a list
+    // whose whole job is to surface low completion among people who do have
+    // modules. They are still shown, last, saying so in words.
+    const unassignedLast = (percent: number | null) => (percent === null ? 1 : 0);
+    teachers.sort((a, b) => {
+      const bucket = unassignedLast(a.completionPercent) - unassignedLast(b.completionPercent);
+      if (bucket !== 0) return bucket;
+      // `?? 0` is unreachable within a bucket: null implies `assigned === 0`,
+      // which the line above already separated out. It keeps the arithmetic
+      // typed rather than asserted. Not `Infinity` as the sentinel either —
+      // `Infinity - Infinity` is NaN, a comparator result that would silently
+      // skip the surname tie-break for two unassigned teachers.
+      const delta = (a.completionPercent ?? 0) - (b.completionPercent ?? 0);
+      if (delta !== 0) return delta;
+      // Surname order as the tie-break, matching the report's staff table: a
+      // stable list people can scan beats one ordered by an id nobody can see.
+      return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`);
+    });
+
     return {
       totalStaff,
       averageCompliancePercent,
@@ -168,6 +272,7 @@ export const adminOverview = query({
       editedAiReviewCount: await readCounter(ctx, COUNTER.aiQuestionsEdited),
       phases,
       completionTrend,
+      teachers,
     };
   },
 });

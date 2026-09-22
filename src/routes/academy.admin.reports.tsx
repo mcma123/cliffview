@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { presentComplianceReport } from "@/application/academy/presenters";
+import { complianceMeterClass, presentComplianceReport } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { csvFileName, downloadCsv, toCsv, type CsvTable } from "@/lib/csv";
@@ -42,13 +42,6 @@ const STAT_ICONS: Record<string, typeof Users> = {
   Completed: CheckCircle2,
   "Avg. compliance": Gauge,
 };
-
-/** Threshold colouring, matching the staff directory's meter. */
-function meterClass(percent: number): string {
-  if (percent >= 80) return "bg-success";
-  if (percent >= 50) return "bg-gold";
-  return "bg-destructive";
-}
 
 function AdminReports() {
   const viewer = useAdminViewer();
@@ -237,7 +230,7 @@ function AdminReports() {
                                 <div
                                   className={cn(
                                     "h-full rounded-full",
-                                    meterClass(row.completionPercent),
+                                    complianceMeterClass(row.completionPercent),
                                   )}
                                   style={{ width: `${row.completionPercent}%` }}
                                 />
@@ -359,7 +352,7 @@ function AdminReports() {
                               <div
                                 className={cn(
                                   "h-full rounded-full",
-                                  meterClass(row.compliancePercent),
+                                  complianceMeterClass(row.compliancePercent),
                                 )}
                                 style={{ width: `${row.compliancePercent}%` }}
                               />

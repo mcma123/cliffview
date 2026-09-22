@@ -46,6 +46,19 @@ export const MAX_ACTIVITY = 500;
 /** Attempts read when showing a learner their own history. Growable, so capped. */
 export const MAX_ATTEMPTS = 100;
 
+/**
+ * A number that is only meaningful over a denominator. Null when there is none.
+ *
+ * Null rather than 0: "nobody was assigned anything" and "nobody completed
+ * anything" are different claims, and 0% makes the second one. Shared by
+ * `reports.compliance` and `dashboard.adminOverview` so the report and the
+ * overview cannot disagree about what an empty denominator means.
+ */
+export function percentOf(part: number, whole: number): number | null {
+  if (whole === 0) return null;
+  return Math.round((part / whole) * 100);
+}
+
 /** Read a counter, treating a missing row as zero. */
 export async function readCounter(ctx: QueryCtx, name: CounterName): Promise<number> {
   const row = await ctx.db

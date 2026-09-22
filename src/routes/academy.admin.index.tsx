@@ -105,6 +105,7 @@ function AdminOverview() {
             <p className="text-xs font-bold uppercase tracking-widest text-gold">
               Completion by Phase
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">{data.phasesCaption}</p>
             <div className="mt-5 space-y-2">
               {data.phases.map((phase) => (
                 <Link
@@ -182,6 +183,68 @@ function AdminOverview() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-xs font-bold uppercase tracking-widest text-gold">
+            Completion by Teacher
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{data.teachersCaption}</p>
+
+          {data.teachers.length === 0 ? (
+            <p className="mt-5 text-sm text-muted-foreground">No active staff yet.</p>
+          ) : (
+            // Scrolls past roughly eight rows. The negative margin is on the
+            // SCROLLER, not on each row as it is in the phase panel above:
+            // `overflow-y-auto` makes overflow-x compute to `auto`, so a row
+            // hanging outside this box would raise a horizontal scrollbar. The
+            // container hangs out instead and its rows sit flush inside it,
+            // which lands the hover background exactly where the phase rows' is.
+            <div className="-mx-2 mt-5 max-h-[29rem] space-y-1 overflow-y-auto">
+              {data.teachers.map((teacher) => (
+                <Link
+                  key={teacher.id}
+                  to="/academy/admin/staff/$staffId"
+                  params={{ staffId: teacher.id }}
+                  className="group flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                    {teacher.initials}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground group-hover:text-primary">
+                      {teacher.name}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {teacher.jobTitle} · {teacher.phaseName}
+                    </span>
+                  </span>
+                  {teacher.hasAssignments ? (
+                    <span className="flex shrink-0 items-center gap-3">
+                      <span className="hidden h-2 w-24 overflow-hidden rounded-full bg-muted sm:block sm:w-40">
+                        <span
+                          className={`block h-full rounded-full ${teacher.meterClass}`}
+                          style={{ width: `${teacher.completionPercent}%` }}
+                        />
+                      </span>
+                      <span className="w-12 text-right text-sm font-bold tabular-nums text-foreground">
+                        {teacher.completionLabel}
+                      </span>
+                      <span className="w-14 text-right text-xs tabular-nums text-muted-foreground">
+                        {teacher.progressLabel}
+                      </span>
+                    </span>
+                  ) : (
+                    // No track at all, for the same reason an empty phase gets
+                    // none: a 0%-wide bar asserts they completed nothing.
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {teacher.completionLabel}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </AdminShell>

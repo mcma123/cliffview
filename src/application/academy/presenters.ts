@@ -238,6 +238,36 @@ export function presentAdminOverview(data: AdminOverview, now: number) {
     // Guard the divisor: an all-zero trend would otherwise divide by zero and
     // render NaN-height bars.
     trendMax: Math.max(1, ...data.completionTrend.map((p) => p.completedModules)),
+    // Each completion panel says what it measures. They answer different
+    // questions — a phase average is the mean of `compliancePercent`, which is
+    // progress *through* courses, while the teacher list counts modules
+    // *finished* — so a phase can read 73% while its teachers read 40%. Stating
+    // the measure is cheaper than leaving a viewer to reconcile two numbers
+    // that were never meant to match.
+    phasesCaption: "Average progress through courses",
+    teachersCaption: "Modules completed of modules assigned · lowest first",
+    // Already ordered by the backend — lowest completion first, nobody-assigned
+    // last. This maps prose onto that order and never re-sorts: a second
+    // ordering here would be a second claim about the same data.
+    teachers: data.teachers.map((teacher) => ({
+      id: teacher.userId,
+      name: formatStaffName(teacher),
+      initials: formatStaffInitials(teacher),
+      jobTitle: teacher.jobTitle,
+      phaseName: teacher.phaseName,
+      completionPercent: teacher.completionPercent,
+      // The bar is suppressed entirely when nothing is assigned, exactly as the
+      // phase panel suppresses its track for an empty phase: a 0%-wide bar
+      // asserts that they completed nothing, which is a different claim from
+      // nobody having asked them to.
+      hasAssignments: teacher.assigned > 0,
+      // `?? 0` is never read: the backend returns null precisely when
+      // `assigned === 0`, which is the branch `formatCompliance` answers with
+      // "No modules assigned".
+      completionLabel: formatCompliance(teacher.assigned, teacher.completionPercent ?? 0),
+      meterClass: complianceMeterClass(teacher.completionPercent ?? 0),
+      progressLabel: `${teacher.completed} / ${teacher.assigned}`,
+    })),
   };
 }
 
@@ -466,6 +496,26 @@ export function formatStaffInitials(user: NameParts): string {
 /** Never "0%" for someone who has simply never been assigned anything. */
 export function formatCompliance(assignedModules: number, compliancePercent: number): string {
   return assignedModules === 0 ? "No modules assigned" : `${compliancePercent}%`;
+}
+
+/**
+ * The compliance meter's colour, by band.
+ *
+ * Green/amber/red rather than a gradient, because the only thing this bar
+ * informs is whether somebody needs chasing, and a smooth scale does not say
+ * that — the same distinction `confidenceTone` draws further down this file.
+ *
+ * Exported because these three thresholds were written out inline in three
+ * places with no shared definition — `academy.admin.reports.tsx`,
+ * `academy.admin.staff.index.tsx` and `academy.admin.staff.$staffId.tsx` —
+ * which is three places for 80 and 50 to drift apart. Per-phase bars keep the
+ * overview's `from-primary to-gold` gradient: an average across a phase is a
+ * temperature, not a person to chase.
+ */
+export function complianceMeterClass(percent: number): string {
+  if (percent >= 80) return "bg-success";
+  if (percent >= 50) return "bg-gold";
+  return "bg-destructive";
 }
 
 function formatLastActive(lastActiveAt: number | undefined, now: number): string {

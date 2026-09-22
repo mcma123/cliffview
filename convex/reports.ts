@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import { requireAdmin } from "./lib/authz";
-import { MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
+import { MAX_MODULES, MAX_PHASES, MAX_STAFF, percentOf } from "./lib/counts";
 import { accessRole, moduleCategory, publishState } from "./validators";
 
 /**
@@ -24,12 +24,6 @@ import { accessRole, moduleCategory, publishState } from "./validators";
  * every seeded enrollment reports its progress with no `lessonProgress` rows
  * behind it. An empty chart is worse than no chart.
  */
-
-/** A number that is only meaningful over a denominator. Null when there is none. */
-function percentOf(part: number, whole: number): number | null {
-  if (whole === 0) return null;
-  return Math.round((part / whole) * 100);
-}
 
 export const compliance = query({
   args: {
