@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { ModuleAssetKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { presentAdminAssetDetail } from "@/application/academy/presenters";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/assets/
 });
 
 function AdminAssetEditor() {
+  const viewer = useAdminViewer();
   const { moduleSlug, assetId } = Route.useParams();
   const { now } = Route.useLoaderData();
   const { data: detail } = useSuspenseQuery(
@@ -63,7 +65,7 @@ function AdminAssetEditor() {
     data.assetKind === "audio" ? Headphones : data.assetKind === "video" ? Video : FileText;
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

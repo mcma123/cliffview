@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { presentAdminAssessment } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { type QuestionDraft, emptyDraft } from "@/components/assessment-question-draft";
 import { AssessmentQuestionEditor } from "@/components/assessment-question-editor";
 import { api } from "../../convex/_generated/api";
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/assessm
 });
 
 function AdminAssessment() {
+  const viewer = useAdminViewer();
   const { moduleSlug } = Route.useParams();
   const { now } = Route.useLoaderData();
   const { data: detail } = useSuspenseQuery(convexQuery(api.questions.adminList, { moduleSlug }));
@@ -75,7 +77,7 @@ function AdminAssessment() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
           <Link

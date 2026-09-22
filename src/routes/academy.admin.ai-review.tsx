@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { presentAiReviewQueue } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { DragAndDropZone, type UploadZoneStatus } from "@/components/drag-and-drop-zone";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ export const Route = createFileRoute("/academy/admin/ai-review")({
 });
 
 function AIReview() {
+  const viewer = useAdminViewer();
   const { now } = Route.useLoaderData();
   const { data: queue } = useSuspenseQuery(convexQuery(api.aiReviewQueue.queue, {}));
   const data = presentAiReviewQueue(queue, now);
@@ -194,7 +196,7 @@ function AIReview() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

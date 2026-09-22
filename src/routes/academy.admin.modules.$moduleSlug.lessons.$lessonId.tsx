@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ModuleLessonKind } from "@/domain/academy/entities";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { formatAssetMeta, presentAdminLessonDetail } from "@/application/academy/presenters";
 import { api } from "../../convex/_generated/api";
 import { ArrowLeft, Eye, FileText, Headphones, Plus, Upload, Video, Save } from "lucide-react";
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/lessons
 });
 
 function AdminLessonEditor() {
+  const viewer = useAdminViewer();
   const { moduleSlug, lessonId } = Route.useParams();
   const { data: detail } = useSuspenseQuery(
     convexQuery(api.lessons.adminDetail, { moduleSlug, lessonSlug: lessonId }),
@@ -101,7 +103,7 @@ function AdminLessonEditor() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { presentAdminStaffDetail } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { AssignModulesDialog } from "@/components/assign-modules-dialog";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/academy/admin/staff/$staffId")({
 type AssignableRole = "staff" | "smt_admin";
 
 function AdminStaffDetailComponent() {
+  const viewer = useAdminViewer();
   const { staffId } = Route.useParams();
   const { now } = Route.useLoaderData();
   const { data: detail } = useSuspenseQuery(
@@ -169,7 +171,7 @@ function AdminStaffDetailComponent() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-5xl space-y-8 animate-in fade-in duration-500">
         <Link
           to="/academy/admin/staff"

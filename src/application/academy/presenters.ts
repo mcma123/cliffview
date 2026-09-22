@@ -161,11 +161,6 @@ export function getLessonPreviewHref(moduleSlug: string, lessonSlug: string): st
  * `sub` line when the backend actually has one to compare against.
  */
 export function presentAdminOverview(data: AdminOverview, now: number) {
-  const complianceDelta =
-    data.previousAverageCompliancePercent === null
-      ? null
-      : data.averageCompliancePercent - data.previousAverageCompliancePercent;
-
   return {
     dateLabel: new Date(now).toLocaleDateString("en-ZA", {
       weekday: "long",
@@ -173,48 +168,73 @@ export function presentAdminOverview(data: AdminOverview, now: number) {
       month: "long",
       year: "numeric",
     }),
+    // Each `label` stays a literal rather than widening to `string`, because
+    // the route keys its icon-and-destination table on exactly these four. A
+    // renamed label is then a compile error there instead of a missing icon at
+    // runtime.
+    //
+    // No href travels in this view-model. `<Link to>` is checked against the
+    // generated route tree only while the value is literal, and a href carried
+    // through here widens to `string` — the one shape TanStack waves through
+    // unchecked. The destinations are literals in the route file instead.
     stats: [
       {
-        label: "Total Staff",
+        label: "Total Staff" as const,
         value: `${data.totalStaff}`,
         sub: "active staff accounts",
       },
       {
-        label: "Modules Completed",
+        label: "Modules Completed" as const,
         value: `${data.completedModules}`,
         sub: "all time, across all staff",
       },
       {
-        label: "Avg. Compliance",
+        label: "Avg. Compliance" as const,
         value: `${data.averageCompliancePercent}%`,
-        // Signed, and only when a prior month was actually recorded.
-        sub:
-          complianceDelta === null
-            ? "across active staff"
-            : `${complianceDelta >= 0 ? "+" : ""}${complianceDelta}% vs last month`,
+        // No month-over-month delta: see `convex/dashboard.ts`. The only stored
+        // past value was a seeded formula, and subtracting it from a live
+        // figure showed a regression that never happened.
+        sub: "across active staff",
       },
       {
-        label: "Pending AI Review",
+        label: "Pending AI Review" as const,
         value: `${data.pendingAiReviewCount}`,
         sub:
           data.editedAiReviewCount > 0
             ? `${data.editedAiReviewCount} edited so far`
             : "questions awaiting review",
-        actionHref: "/academy/admin/ai-review",
       },
     ],
-    // Phases with nobody in them still render, at 0%, rather than being hidden:
-    // an empty phase is a real fact about the school.
+    // Phases with nobody in them still render rather than being hidden: an
+    // empty phase is a real fact about the school. It does not render as 0%,
+    // though — "nobody is in this phase" and "everybody in this phase has
+    // completed nothing" are different claims, and a 0% bar makes the second
+    // one. `staffCount` was already computed and carried here; it was simply
+    // never shown, which is what made the two indistinguishable.
     phases: data.phases.map((phase) => ({
       name: phase.name,
       completionPercent: phase.completionPercent,
       staffCount: phase.staffCount,
+      hasStaff: phase.staffCount > 0,
+      staffLabel:
+        phase.staffCount === 0
+          ? "No staff yet"
+          : `${phase.staffCount} staff member${phase.staffCount === 1 ? "" : "s"}`,
     })),
-    completionTrend: data.completionTrend.map((point) => ({
-      monthKey: point.monthKey,
-      month: formatMonthShort(point.monthKey),
-      completedModules: point.completedModules,
-    })),
+    completionTrend: data.completionTrend.map((point) => {
+      const month = formatMonthShort(point.monthKey);
+      return {
+        monthKey: point.monthKey,
+        month,
+        completedModules: point.completedModules,
+        // The bar's hover title and its accessible name. A bar labelled only by
+        // its own height is not labelled, and every user-facing string belongs
+        // to the presenter.
+        tooltip: `${month} · ${point.completedModules} module${
+          point.completedModules === 1 ? "" : "s"
+        } completed`,
+      };
+    }),
     // Guard the divisor: an all-zero trend would otherwise divide by zero and
     // render NaN-height bars.
     trendMax: Math.max(1, ...data.completionTrend.map((p) => p.completedModules)),

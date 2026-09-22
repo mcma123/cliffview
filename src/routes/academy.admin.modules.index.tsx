@@ -2,6 +2,7 @@ import { convexQuery } from "@convex-dev/react-query";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { presentAdminModuleLibrary } from "@/application/academy/presenters";
 import { api } from "../../convex/_generated/api";
 import { BookOpen, FileText, Plus, Search, Sparkles, Video } from "lucide-react";
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/academy/admin/modules/")({
 });
 
 function AdminModuleLibrary() {
+  const viewer = useAdminViewer();
   const { now } = Route.useLoaderData();
   // Live subscription on the client: an edit elsewhere repaints this grid with
   // no refetch code.
@@ -23,7 +25,7 @@ function AdminModuleLibrary() {
   const data = presentAdminModuleLibrary(rows, now);
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>

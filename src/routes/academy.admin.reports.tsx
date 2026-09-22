@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { presentComplianceReport } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { csvFileName, downloadCsv, toCsv, type CsvTable } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 import { api } from "../../convex/_generated/api";
@@ -50,6 +51,7 @@ function meterClass(percent: number): string {
 }
 
 function AdminReports() {
+  const viewer = useAdminViewer();
   const { now } = Route.useLoaderData();
   const [phaseId, setPhaseId] = useState<Id<"phases"> | null>(null);
 
@@ -70,7 +72,7 @@ function AdminReports() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>

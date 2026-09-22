@@ -2,8 +2,15 @@ import { v } from "convex/values";
 
 import { query } from "./_generated/server";
 import { requireAdmin } from "./lib/authz";
-import { COUNTER, MAX_PHASES, MAX_STAFF, TREND_MONTHS, readCounter } from "./lib/counts";
-import { earliestMonthKey, monthKeyFromMs, monthKeysBack } from "./lib/time";
+import {
+  COUNTER,
+  MAX_MODULES,
+  MAX_PHASES,
+  MAX_STAFF,
+  TREND_MONTHS,
+  readCounter,
+} from "./lib/counts";
+import { monthKeyFromMs, monthKeysBack } from "./lib/time";
 
 /**
  * The SMT compliance overview.
@@ -13,11 +20,25 @@ import { earliestMonthKey, monthKeyFromMs, monthKeysBack } from "./lib/time";
  * `internalQuery` until an auth provider existed to gate it against, which is
  * why the overview screen is wired in Phase 4 rather than Phase 3.
  *
- * Every number here is derived from rows or read from a counter maintained in
+ * Every number here is derived from rows, or read from a counter maintained in
  * the same transaction as the write it counts. The old snapshot was a literal:
  * it claimed 42 staff, 73% average compliance and 8 pending questions while the
  * real data held 3 staff, 76% and 2 — three tiles that disagreed with the very
  * screens they linked to.
+ *
+ * Completions — the tile and the six-month trend — are counted from
+ * `enrollments` in the same traversal, over the same scope, that
+ * `reports.compliance` performs, so the overview and the report cannot
+ * disagree. They used to come from two sources that nothing maintained:
+ * `COUNTER.completedModules`, which only the seed ever wrote, so the tile froze
+ * at its seeded value and drifted further with every real completion; and
+ * `monthlyRollups`, which held a seeded ramp anchored to the day the seed ran,
+ * so the chart walked off its own data one month at a time. Neither is read
+ * here any more.
+ *
+ * There is no month-over-month delta. A delta needs a past value, the only
+ * stored one was the seed's `60 + i * 3`, and subtracting a literal from a live
+ * figure produced a confident regression that never happened.
  *
  * `now` is an argument, not `Date.now()`. A query is not rerun because time
  * advanced, so a wall-clock read here would go stale and would also defeat
@@ -39,20 +60,16 @@ export const adminOverview = query({
         staffCount: v.number(),
       }),
     ),
-    /** Exactly TREND_MONTHS points, oldest first, zero-filled. */
+    /**
+     * Exactly TREND_MONTHS points, oldest first, zero-filled. Bucketed by the
+     * month of each completed enrollment's `completedAt`.
+     */
     completionTrend: v.array(
       v.object({
         monthKey: v.string(),
         completedModules: v.number(),
       }),
     ),
-    /**
-     * Last month's compliance snapshot, or null when no snapshot exists yet.
-     * A delta needs a past value; nothing recorded one before, which is why the
-     * old "+5% across all staff" was a hardcoded string. The presenter shows a
-     * delta only when this is present.
-     */
-    previousAverageCompliancePercent: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -103,37 +120,54 @@ export const adminOverview = query({
         };
       });
 
-    // Six-month trend as one index range scan, then zero-filled so a month with
-    // no completions renders as an empty bar rather than being dropped.
+    // Completions come from the enrollment rows themselves: the all-time tile
+    // and the six-month trend in one pass, so they cannot disagree with each
+    // other, and over the same scope as `reports.compliance` so they cannot
+    // disagree with the report either. `activeStaff` is the scope — an
+    // operator login and anyone who has left are both excluded, exactly as
+    // they are from the headcount above.
+    const inScope = new Set(activeStaff.map((staff) => staff._id));
     const windowKeys = monthKeysBack(args.now, TREND_MONTHS);
-    const from = earliestMonthKey(args.now, TREND_MONTHS);
-    const rollups = await ctx.db
-      .query("monthlyRollups")
-      .withIndex("by_monthKey", (q) => q.gte("monthKey", from))
-      .take(TREND_MONTHS * 2);
-    const byMonth = new Map(rollups.map((row) => [row.monthKey, row]));
+    // Seeded with every key so a month with no completions renders as an empty
+    // bar rather than being dropped.
+    const windowed = new Map(windowKeys.map((monthKey) => [monthKey, 0]));
+
+    const moduleRows = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
+    let completedModules = 0;
+    for (const module of moduleRows) {
+      const rows = await ctx.db
+        .query("enrollments")
+        .withIndex("by_moduleId_and_status", (q) =>
+          q.eq("moduleId", module._id).eq("status", "completed"),
+        )
+        .take(MAX_STAFF);
+      for (const row of rows) {
+        if (!inScope.has(row.userId)) continue;
+        completedModules += 1;
+        // A completed row with no timestamp still counts all-time; it just
+        // cannot be placed in a month. Dropping it from the tile instead would
+        // make the tile disagree with the report.
+        if (row.completedAt === undefined) continue;
+        const monthKey = monthKeyFromMs(row.completedAt);
+        const bucket = windowed.get(monthKey);
+        // Absent means the completion predates the window, not that it is new.
+        if (bucket !== undefined) windowed.set(monthKey, bucket + 1);
+      }
+    }
+
     const completionTrend = windowKeys.map((monthKey) => ({
       monthKey,
-      completedModules: byMonth.get(monthKey)?.completedModules ?? 0,
+      completedModules: windowed.get(monthKey) ?? 0,
     }));
-
-    const previousMonthKey = monthKeysBack(args.now, 2)[0];
-    const previousRollup = byMonth.get(previousMonthKey);
-    const currentMonthKey = monthKeyFromMs(args.now);
-    const previousAverageCompliancePercent =
-      previousMonthKey === currentMonthKey
-        ? null
-        : (previousRollup?.averageCompliancePercent ?? null);
 
     return {
       totalStaff,
       averageCompliancePercent,
-      completedModules: await readCounter(ctx, COUNTER.completedModules),
+      completedModules,
       pendingAiReviewCount: await readCounter(ctx, COUNTER.aiQuestionsPending),
       editedAiReviewCount: await readCounter(ctx, COUNTER.aiQuestionsEdited),
       phases,
       completionTrend,
-      previousAverageCompliancePercent,
     };
   },
 });

@@ -19,7 +19,18 @@ const adminNav: NavItem[] = [
   { to: "/academy/admin/reports", label: "Reports", icon: FileText, ready: true },
 ];
 
-export function AdminShell({ children }: { children: ReactNode }) {
+export function AdminShell({
+  children,
+  viewer,
+}: {
+  children: ReactNode;
+  /**
+   * Optional because this shell renders while the identity query settles, and
+   * an avatar is not worth a loading state. It used to read `MN` — a literal,
+   * on every admin screen, for whoever was signed in.
+   */
+  viewer?: { name: string; initials: string };
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
@@ -89,9 +100,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </p>
             <h1 className="text-base font-semibold text-foreground">Cliffview Academy</h1>
           </div>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gold text-sm font-bold text-primary-deep">
-            MN
-          </div>
+          {viewer === undefined ? null : (
+            <div
+              title={viewer.name}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gold text-sm font-bold text-primary-deep"
+            >
+              {viewer.initials}
+            </div>
+          )}
         </header>
         <main className="px-4 py-6 lg:px-8 lg:py-8">{children}</main>
       </div>

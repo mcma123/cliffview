@@ -8,11 +8,27 @@ import { toast } from "sonner";
 import { presentAdminStaffDirectory } from "@/application/academy/presenters";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
 export const Route = createFileRoute("/academy/admin/staff/")({
   head: () => ({ meta: [{ title: "Staff Directory · Cliffview Academy" }] }),
+  /**
+   * One optional param, and *optional* is load-bearing: TanStack makes `search`
+   * a required `<Link>` prop for any target whose schema has a required key, so
+   * a required `phase` would break every plain link to this route — the admin
+   * sidebar's included — at compile time.
+   *
+   * It seeds the search box below rather than adding a second filter beside it.
+   * The compliance overview's phase rows deep-link here.
+   *
+   * Not a Convex argument, unlike `academy.admin.reports.tsx`: nothing above
+   * the table is derived from it, so there is no second place for the
+   * arithmetic to disagree.
+   */
+  validateSearch: (search: Record<string, unknown>): { phase?: string } =>
+    typeof search.phase === "string" && search.phase.trim() !== "" ? { phase: search.phase } : {},
   // No loader prefetch: this is a gated query and Convex Auth keeps its token
   // in localStorage, so there is no identity on the server. Loaders may return
   // only request-local values.
@@ -21,12 +37,20 @@ export const Route = createFileRoute("/academy/admin/staff/")({
 });
 
 function AdminStaffIndexComponent() {
+  const viewer = useAdminViewer();
   const { now } = Route.useLoaderData();
   const { data: directory } = useSuspenseQuery(convexQuery(api.staff.directory, {}));
   const data = presentAdminStaffDirectory(directory, now);
 
   const createStaff = useMutation({ mutationFn: useConvexMutation(api.staff.create) });
-  const [search, setSearch] = useState("");
+
+  // Seeded once, at mount, and deliberately not kept in sync afterwards: the
+  // input is the filter, and writing every keystroke back to the URL would
+  // fight the admin as they type. Arriving from the overview mounts this route
+  // fresh, so the seed always lands; clearing the box then leaves a stale
+  // `?phase=` in the address bar, which is inert.
+  const { phase } = Route.useSearch();
+  const [search, setSearch] = useState(phase ?? "");
 
   // The search box was decorative before. Filtering here rather than in the
   // backend keeps it instant and needs no index: the whole directory is already
@@ -43,7 +67,7 @@ function AdminStaffIndexComponent() {
         );
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-6xl space-y-8 animate-in fade-in duration-500">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>

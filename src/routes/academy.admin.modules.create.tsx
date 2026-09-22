@@ -9,6 +9,7 @@ import {
   type ModuleLessonKind,
 } from "@/domain/academy/entities";
 import { AdminShell } from "@/components/admin-shell";
+import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import {
   ArrowRight,
   BookOpen,
@@ -74,6 +75,7 @@ function wholeNumber(raw: string, label: string, max?: number): number {
 }
 
 function CreateModulePage() {
+  const viewer = useAdminViewer();
   const navigate = useNavigate();
   const [objectives, setObjectives] = useState<string[]>([]);
   const [lessons, setLessons] = useState<
@@ -146,7 +148,7 @@ function CreateModulePage() {
   }
 
   return (
-    <AdminShell>
+    <AdminShell viewer={viewer}>
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
