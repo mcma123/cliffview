@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { assertFileFacts, assertKeyUnclaimed } from "./lib/assets";
 import { recordAudit, stamp } from "./lib/audit";
+import { STEP_BLOB_BUDGET, STEP_ROW_BUDGET, removeLessonChildren } from "./lib/deletion";
 import { NO_QUESTIONS_MESSAGE, hasQuestions } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
 import {
@@ -373,21 +374,14 @@ export const remove = mutation({
     const actor = await requireAdmin(ctx);
     const lesson = await lessonOrThrow(ctx, args.lessonId);
 
-    // Join rows first: an orphaned lessonAssets row would point at nothing.
-    const links = await ctx.db
-      .query("lessonAssets")
-      .withIndex("by_lessonId_and_order", (q) => q.eq("lessonId", lesson._id))
-      .take(MAX_SIBLINGS);
-    for (const link of links) await ctx.db.delete("lessonAssets", link._id);
-
-    // Learner progress rows reference the lesson, so they go with it. The
-    // table is empty until Phase 8 wires learner progress, but deleting a
-    // lesson must not be able to leave a dangling reference behind later.
-    const progress = await ctx.db
-      .query("lessonProgress")
-      .withIndex("by_lessonId", (q) => q.eq("lessonId", lesson._id))
-      .take(MAX_SIBLINGS);
-    for (const row of progress) await ctx.db.delete("lessonProgress", row._id);
+    // Join rows and progress rows first, through the same helper the module
+    // cascade uses. It replaced an inline copy here that capped the
+    // `lessonProgress` read at MAX_SIBLINGS (200) while the row count is
+    // bounded by MAX_STAFF (500) — one per person who opened the lesson. In a
+    // full school that silently orphaned up to 300 rows whose `by_lessonId`
+    // key had just been deleted.
+    const budget = { rows: STEP_ROW_BUDGET, blobs: STEP_BLOB_BUDGET };
+    await removeLessonChildren(ctx, lesson._id, budget);
 
     await ctx.db.delete("lessons", lesson._id);
     await renumberLessons(ctx, lesson.moduleId);

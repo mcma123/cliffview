@@ -442,7 +442,18 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     questionCount: v.number(),
     errorMessage: v.optional(v.string()),
-  }).index("by_status_and_startedAt", ["status", "startedAt"]),
+  })
+    .index("by_status_and_startedAt", ["status", "startedAt"])
+    /**
+     * Runs belonging to one module, so deleting a module can take its runs
+     * with it. Without this, `aiReviewQueue.queue` keeps offering a filter
+     * chip for a module that no longer exists — it returns the ten most
+     * recent runs unconditionally.
+     *
+     * Indexing an optional field is fine: rows without a moduleId sort first
+     * and are simply never in an equality range.
+     */
+    .index("by_moduleId_and_startedAt", ["moduleId", "startedAt"]),
 
   aiQuestions: defineTable({
     /** A real reference. The seed carried only a moduleTitle display string. */

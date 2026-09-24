@@ -1,5 +1,4 @@
 import type { MutationCtx } from "../_generated/server";
-import type { Actor } from "./authz";
 
 /**
  * Audit helpers.
@@ -23,7 +22,13 @@ export function stamp(): { contentUpdatedAt: number } {
 export async function recordAudit(
   ctx: MutationCtx,
   args: {
-    actor: Actor | null;
+    /**
+     * Who acted. Widened from `Actor` to just the id because a scheduled
+     * continuation carries the id across transactions and has no reason to
+     * re-read the user document to write one log row. `auditLog.actorId` is
+     * a plain string in the schema, so nothing is lost.
+     */
+    actor: { userId: string } | null;
     action: string;
     entityTable: string;
     entityId: string;

@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { deleteDraft } from "./lib/aiDrafts";
 import { recordAudit, stamp } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
 import { COUNTER, bumpCounter, readCounter } from "./lib/counts";
@@ -551,31 +552,6 @@ export const clearReviewed = mutation({
     return { removed };
   },
 });
-
-/**
- * Remove a draft, its options, and its decision history.
- *
- * The pending counter is a row count that the dashboard tile reads, so it has
- * to follow. The approved/rejected/edited counters are tallies of *decisions
- * made* — "1 edited so far" — and deleting the paperwork does not un-make the
- * judgement, so they are deliberately left alone.
- */
-async function deleteDraft(ctx: MutationCtx, question: Doc<"aiQuestions">): Promise<void> {
-  const options = await ctx.db
-    .query("aiQuestionOptions")
-    .withIndex("by_questionId_and_order", (q) => q.eq("questionId", question._id))
-    .take(MAX_OPTIONS);
-  for (const option of options) await ctx.db.delete("aiQuestionOptions", option._id);
-
-  const decisions = await ctx.db
-    .query("aiReviewDecisions")
-    .withIndex("by_questionId_and_decidedAt", (q) => q.eq("questionId", question._id))
-    .take(MAX_QUEUE);
-  for (const decision of decisions) await ctx.db.delete("aiReviewDecisions", decision._id);
-
-  await ctx.db.delete("aiQuestions", question._id);
-  if (question.status === "pending") await bumpCounter(ctx, COUNTER.aiQuestionsPending, -1);
-}
 
 /**
  * Remove assessment questions that an un-guarded approval duplicated.

@@ -1,18 +1,18 @@
 import { ConvexError, v } from "convex/values";
 
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { recordAudit, stamp } from "./lib/audit";
 import { assertAssessmentReady } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
-import { assignableStaff } from "./lib/enrollment";
+import { assignableStaff, recomputeCompliance } from "./lib/enrollment";
 import { internal } from "./_generated/api";
 import { moduleCategory, publishState } from "./validators";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { MAX_MODULES } from "./lib/counts";
+import { MAX_MODULES, MAX_STAFF } from "./lib/counts";
 import { MAX_OPTIONS, MAX_SIBLINGS } from "./lib/ordering";
-import { deleteBlobIfPresent } from "./lib/storage";
+import { removeModuleContent } from "./lib/deletion";
 import schema from "./schema";
 
 /**
@@ -251,7 +251,7 @@ async function reserveSlug(ctx: MutationCtx, base: string): Promise<string> {
 }
 
 /** Load a module or throw a typed not-found. */
-async function moduleOrThrow(ctx: MutationCtx, moduleId: Id<"modules">): Promise<Doc<"modules">> {
+async function moduleOrThrow(ctx: QueryCtx, moduleId: Id<"modules">): Promise<Doc<"modules">> {
   const module = await ctx.db.get("modules", moduleId);
   if (module === null) {
     throw new ConvexError({ code: "NOT_FOUND", message: "That module no longer exists." });
@@ -515,84 +515,363 @@ export const setPublishState = mutation({
 /**
  * Hard-delete a module and its children.
  *
- * Refused once anyone is enrolled: that is what `archived` is for. Deletion is
- * only for content that never reached a learner.
+ * Refused once anyone is enrolled — that is what `archived` is for, and
+ * deletion is meant for content that never reached a learner.
+ * `deleteEnrollments` is the deliberate way past it, for demo content that did
+ * reach people but was never real.
+ *
+ * `v.literal(true)` rather than `v.boolean()`, the shape `seed.run`'s
+ * `iAmSure` already uses: there is no such thing as passing this falsely.
+ *
+ * `confirm` is the module's own **slug**, and is required only when opting in.
+ * A constant like `"cliffview"` is enough for an `internalMutation` somebody
+ * types into a terminal, but this mutation is public — a constant is a string
+ * any client hardcodes once, so it gates nothing. The slug makes the
+ * confirmation carry *which module*, so a mis-wired dialog aimed at the wrong
+ * id is refused rather than deleting the wrong library entry.
  */
 export const remove = mutation({
-  args: { moduleId: v.id("modules") },
-  returns: v.null(),
+  args: {
+    moduleId: v.id("modules"),
+    deleteEnrollments: v.optional(v.literal(true)),
+    confirm: v.optional(v.string()),
+  },
+  returns: v.object({
+    /** False when the cascade ran out of budget; a scheduled step finishes it. */
+    done: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const actor = await requireAdmin(ctx);
     const module = await moduleOrThrow(ctx, args.moduleId);
+    const deleteEnrollments = args.deleteEnrollments === true;
 
-    const enrolled = await ctx.db
-      .query("enrollments")
-      .withIndex("by_moduleId_and_status", (q) => q.eq("moduleId", module._id))
-      .take(1);
-    if (enrolled.length > 0) {
+    if (!deleteEnrollments) {
+      const enrolled = await ctx.db
+        .query("enrollments")
+        .withIndex("by_moduleId_and_status", (q) => q.eq("moduleId", module._id))
+        .take(1);
+      if (enrolled.length > 0) {
+        throw new ConvexError({
+          code: "IN_USE",
+          message: "Staff are enrolled in this module. Archive it instead of deleting it.",
+        });
+      }
+    } else if (args.confirm !== module.slug) {
+      // Checked before anything is read or written: a gate that throws after
+      // deleting is not a gate.
       throw new ConvexError({
-        code: "IN_USE",
-        message: "Staff are enrolled in this module. Archive it instead of deleting it.",
+        code: "CONFIRM_REQUIRED",
+        message: `Type the module's name (${module.slug}) to confirm. This also deletes every staff enrolment, score and completion record for it.`,
       });
     }
 
-    // Children before parent, and join rows before the rows they join.
-    const lessons = await ctx.db
-      .query("lessons")
-      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
-      .take(MAX_SIBLINGS);
-    for (const lesson of lessons) {
-      const links = await ctx.db
-        .query("lessonAssets")
-        .withIndex("by_lessonId_and_order", (q) => q.eq("lessonId", lesson._id))
-        .take(MAX_SIBLINGS);
-      for (const link of links) await ctx.db.delete("lessonAssets", link._id);
-      await ctx.db.delete("lessons", lesson._id);
+    const done = await removeModuleAndFinish(ctx, module, deleteEnrollments, actor.userId);
+    return { done };
+  },
+});
+
+/** What an admin types to confirm clearing the whole library. */
+const DELETE_ALL_PHRASE = "delete every module";
+
+/** Backstop: a step that cannot shrink fails loudly instead of running forever. */
+const MAX_PASSES = 2000;
+
+/**
+ * Delete the whole library.
+ *
+ * `expectedModuleCount` is compared against the live count, so a screen left
+ * open while somebody else adds a module cannot delete more than the admin was
+ * shown. The same reasoning as the staff import's preview: a number an admin
+ * agreed to is a claim about what they saw, and the server checks it rather
+ * than trusting it.
+ *
+ * Without `deleteEnrollments`, a module somebody is enrolled in is **skipped**,
+ * not refused. Refusing the entire run because one module is in use would make
+ * the button useless against exactly the library it exists to clear.
+ */
+export const removeAll = mutation({
+  args: {
+    confirm: v.string(),
+    expectedModuleCount: v.number(),
+    deleteEnrollments: v.optional(v.literal(true)),
+  },
+  returns: v.object({ moduleCount: v.number() }),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+
+    if (args.confirm !== DELETE_ALL_PHRASE) {
+      throw new ConvexError({
+        code: "CONFIRM_REQUIRED",
+        message: `Type "${DELETE_ALL_PHRASE}" to confirm.`,
+      });
     }
 
-    const assets = await ctx.db
-      .query("assets")
-      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
-      .take(MAX_SIBLINGS);
-    // Blob before row: an asset row deleted on its own leaves an object in the
-    // R2 bucket that nothing can ever reach or name again.
-    for (const asset of assets) {
-      await deleteBlobIfPresent(ctx, asset.r2Key);
-      await ctx.db.delete("assets", asset._id);
+    const modules = await ctx.db.query("modules").withIndex("by_sequence").take(MAX_MODULES);
+    if (modules.length !== args.expectedModuleCount) {
+      throw new ConvexError({
+        code: "CHANGED",
+        message: `The library has ${modules.length} modules now, not ${args.expectedModuleCount}. Reload and check what is there before deleting.`,
+      });
     }
 
-    const objectives = await ctx.db
-      .query("moduleObjectives")
-      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
-      .take(MAX_SIBLINGS);
-    for (const objective of objectives) await ctx.db.delete("moduleObjectives", objective._id);
-
-    // Options before questions, for the same reason lesson joins go before
-    // lessons: an option row left behind points at nothing and no index can
-    // ever name it again.
-    const questions = await ctx.db
-      .query("assessmentQuestions")
-      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
-      .take(MAX_SIBLINGS);
-    for (const question of questions) {
-      const options = await ctx.db
-        .query("assessmentQuestionOptions")
-        .withIndex("by_questionId_and_order", (q) => q.eq("questionId", question._id))
-        .take(MAX_OPTIONS);
-      for (const option of options) {
-        await ctx.db.delete("assessmentQuestionOptions", option._id);
-      }
-      await ctx.db.delete("assessmentQuestions", question._id);
-    }
-
-    await ctx.db.delete("modules", module._id);
+    // One row for the decision. The walk writes one more per module removed.
     await recordAudit(ctx, {
       actor,
+      action: "module.removeAll",
+      entityTable: "modules",
+      entityId: "library",
+      summary: `${modules.length} module${modules.length === 1 ? "" : "s"}${
+        args.deleteEnrollments === true ? ", with enrolments" : ""
+      }`,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.modules.removeStep, {
+      ...(args.deleteEnrollments === true ? { deleteEnrollments: true as const } : {}),
+      actorId: actor.userId,
+      passes: 0,
+      removed: 0,
+    });
+
+    return { moduleCount: modules.length };
+  },
+});
+
+/**
+ * One transaction's worth of deleting, then reschedule.
+ *
+ * The cursor is `afterSequence`, a key in the data's own ordering rather than
+ * an index into a list captured up front. `staff.assignAllStep` can carry a
+ * frozen id list because granting is additive and idempotent; a delete cascade
+ * is neither, so a step that fails halfway leaves a half-deleted module — and
+ * re-querying is what makes re-running *finish the job* rather than skip it.
+ *
+ * Every pass either finds no modules (stop), advances the cursor past one
+ * (strictly increasing, finite), or deletes a budget of rows from the module it
+ * is on (strictly decreasing, finite). No pass can be a no-op, so this ends.
+ *
+ * No authorization of its own: `removeAll` was gated once, and this is
+ * unreachable from any client.
+ */
+export const removeStep = internalMutation({
+  args: {
+    afterSequence: v.optional(v.number()),
+    deleteEnrollments: v.optional(v.literal(true)),
+    actorId: v.string(),
+    passes: v.number(),
+    removed: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.passes > MAX_PASSES) {
+      throw new ConvexError({
+        code: "STUCK",
+        message: `Module deletion did not finish in ${MAX_PASSES} passes. ${args.removed} removed.`,
+      });
+    }
+
+    const next = await ctx.db
+      .query("modules")
+      .withIndex("by_sequence", (q) =>
+        args.afterSequence === undefined ? q : q.gt("sequence", args.afterSequence),
+      )
+      .take(1);
+
+    if (next.length === 0) {
+      await recordAudit(ctx, {
+        actor: { userId: args.actorId },
+        action: "module.removeAll.finished",
+        entityTable: "modules",
+        entityId: "library",
+        summary: `${args.removed} module${args.removed === 1 ? "" : "s"} removed`,
+      });
+      return null;
+    }
+
+    const module = next[0];
+    const deleteEnrollments = args.deleteEnrollments === true;
+    let removed = args.removed;
+    let afterSequence = args.afterSequence;
+
+    const enrolled = deleteEnrollments
+      ? []
+      : await ctx.db
+          .query("enrollments")
+          .withIndex("by_moduleId_and_status", (q) => q.eq("moduleId", module._id))
+          .take(1);
+
+    if (enrolled.length > 0) {
+      // Skipped, not refused: step over it and keep going.
+      afterSequence = module.sequence;
+    } else {
+      const done = await removeModuleContentAndRow(ctx, module, deleteEnrollments, args.actorId);
+      if (done) {
+        removed += 1;
+        afterSequence = module.sequence;
+      }
+      // Not done: the cursor stays put and the next pass resumes this module.
+    }
+
+    await ctx.scheduler.runAfter(0, internal.modules.removeStep, {
+      ...(afterSequence === undefined ? {} : { afterSequence }),
+      ...(deleteEnrollments ? { deleteEnrollments: true as const } : {}),
+      actorId: args.actorId,
+      passes: args.passes + 1,
+      removed,
+    });
+    return null;
+  },
+});
+
+/**
+ * Run the cascade, and delete the module row if that emptied it.
+ *
+ * Compliance is recomputed once per affected person at the end of the
+ * transaction rather than once per enrollment: `recomputeCompliance` re-reads
+ * a user's whole enrollment list, so per-enrollment would be quadratic against
+ * one document. It is also correct this way — a mutation is one transaction, so
+ * at every commit the stored percentage equals the mean over the rows that
+ * actually exist.
+ */
+async function removeModuleContentAndRow(
+  ctx: MutationCtx,
+  module: Doc<"modules">,
+  deleteEnrollments: boolean,
+  actorId: string,
+): Promise<boolean> {
+  const result = await removeModuleContent(ctx, module, { deleteEnrollments });
+
+  if (result.done) {
+    await ctx.db.delete("modules", module._id);
+    await recordAudit(ctx, {
+      actor: { userId: actorId },
       action: "module.remove",
       entityTable: "modules",
       entityId: module._id,
       summary: module.title,
     });
-    return null;
+  }
+
+  for (const userId of result.touchedUserIds) {
+    await recomputeCompliance(ctx, userId);
+  }
+
+  return result.done;
+}
+
+/**
+ * The single delete, plus the continuation a single delete may need.
+ *
+ * A module with more children than one transaction can carry is rare but not
+ * impossible — `lessonProgress` alone is lessons times staff — so the one-shot
+ * path hands off to the same walk rather than failing.
+ */
+async function removeModuleAndFinish(
+  ctx: MutationCtx,
+  module: Doc<"modules">,
+  deleteEnrollments: boolean,
+  actorId: string,
+): Promise<boolean> {
+  const done = await removeModuleContentAndRow(ctx, module, deleteEnrollments, actorId);
+  if (done) return true;
+
+  await ctx.scheduler.runAfter(0, internal.modules.removeStep, {
+    // One below this module's own key, so the cursor lands back on it and no
+    // other module is touched.
+    afterSequence: module.sequence - 1,
+    ...(deleteEnrollments ? { deleteEnrollments: true as const } : {}),
+    actorId,
+    passes: 0,
+    removed: 0,
+  });
+  return false;
+}
+
+/**
+ * What deleting this module would destroy.
+ *
+ * A separate query rather than more columns on `listForAdmin`, because an
+ * enrollment count there would be one `by_moduleId_and_status` scan per module
+ * — up to 200 x 500 reads in a query every admin holds a live subscription to.
+ * That is the same shape of failure that put `assignAllModules` on the
+ * scheduler: fine on ten modules and forty-two enrolments, fatal on a real
+ * secondary school. This reads one module, and only when a dialog opens.
+ *
+ * `remove` re-derives its own refusal server-side and never trusts these
+ * numbers — the rule the staff import already follows between preview and
+ * import.
+ */
+export const deletionImpact = query({
+  args: { moduleId: v.id("modules") },
+  returns: v.object({
+    title: v.string(),
+    slug: v.string(),
+    lessons: v.number(),
+    assets: v.number(),
+    objectives: v.number(),
+    questions: v.number(),
+    aiDrafts: v.number(),
+    attempts: v.number(),
+    enrollments: v.number(),
+    completedEnrollments: v.number(),
+    /** True when a count hit its cap, so the screen can say "500+" not a lie. */
+    truncated: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const module = await moduleOrThrow(ctx, args.moduleId);
+
+    const lessons = await ctx.db
+      .query("lessons")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+    const assets = await ctx.db
+      .query("assets")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+    const objectives = await ctx.db
+      .query("moduleObjectives")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+    const questions = await ctx.db
+      .query("assessmentQuestions")
+      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", module._id))
+      .take(MAX_SIBLINGS);
+    const attempts = await ctx.db
+      .query("assessmentAttempts")
+      .withIndex("by_moduleId_and_attemptedAt", (q) => q.eq("moduleId", module._id))
+      .take(MAX_STAFF);
+    const enrollments = await ctx.db
+      .query("enrollments")
+      .withIndex("by_moduleId_and_status", (q) => q.eq("moduleId", module._id))
+      .take(MAX_STAFF);
+
+    let aiDrafts = 0;
+    for (const status of ["pending", "approved", "rejected", "edited"] as const) {
+      const drafts = await ctx.db
+        .query("aiQuestions")
+        .withIndex("by_moduleId_and_status", (q) =>
+          q.eq("moduleId", module._id).eq("status", status),
+        )
+        .take(MAX_SIBLINGS);
+      aiDrafts += drafts.length;
+    }
+
+    return {
+      title: module.title,
+      slug: module.slug,
+      lessons: lessons.length,
+      assets: assets.length,
+      objectives: objectives.length,
+      questions: questions.length,
+      aiDrafts,
+      attempts: attempts.length,
+      enrollments: enrollments.length,
+      completedEnrollments: enrollments.filter((row) => row.status === "completed").length,
+      truncated:
+        lessons.length === MAX_SIBLINGS ||
+        assets.length === MAX_SIBLINGS ||
+        enrollments.length === MAX_STAFF ||
+        attempts.length === MAX_STAFF,
+    };
   },
 });

@@ -28,6 +28,7 @@ export function ConfirmDialog({
   title,
   description,
   body,
+  confirmPhrase,
   confirmLabel,
   tone = "destructive",
   disabled = false,
@@ -39,6 +40,14 @@ export function ConfirmDialog({
   description: string;
   /** Anything more the reader needs before agreeing. */
   body?: React.ReactNode;
+  /**
+   * Text the reader must type before the button works.
+   *
+   * For deletes whose cost is other people's records. A dialog somebody can
+   * dismiss with a reflex is not a decision, and this is the one thing in the
+   * app that asks for a deliberate act rather than a click.
+   */
+  confirmPhrase?: string;
   confirmLabel: string;
   tone?: "destructive" | "primary";
   disabled?: boolean;
@@ -46,9 +55,14 @@ export function ConfirmDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [typed, setTyped] = useState("");
+
+  // Trimmed, because a phrase copied out of the sentence above it arrives with
+  // a trailing space and refusing that teaches nothing.
+  const phraseMatches = confirmPhrase === undefined || typed.trim() === confirmPhrase;
 
   async function confirm() {
-    if (saving) return;
+    if (saving || !phraseMatches) return;
     setSaving(true);
     try {
       await onConfirm();
@@ -67,6 +81,8 @@ export function ConfirmDialog({
       onOpenChange={(next) => {
         // Closing mid-write would hide a delete that is still going.
         if (saving) return;
+        // Cleared on close: reopening should ask again, not arrive pre-armed.
+        if (!next) setTyped("");
         setOpen(next);
       }}
     >
@@ -84,7 +100,27 @@ export function ConfirmDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {body === undefined ? null : <div className="px-6 py-6 sm:px-8">{body}</div>}
+        {body === undefined && confirmPhrase === undefined ? null : (
+          <div className="space-y-4 px-6 py-6 sm:px-8">
+            {body}
+            {confirmPhrase === undefined ? null : (
+              <label className="block space-y-2">
+                <span className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                  Type{" "}
+                  <span className="font-mono normal-case text-foreground">{confirmPhrase}</span> to
+                  confirm
+                </span>
+                <input
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-2xl border border-input bg-background px-4 py-3 font-mono text-sm outline-none focus:border-primary"
+                />
+              </label>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-3 border-t border-border bg-muted/30 px-6 py-4 sm:px-8">
           <button
@@ -98,7 +134,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={() => void confirm()}
-            disabled={saving}
+            disabled={saving || !phraseMatches}
             className={cn(
               "inline-flex items-center gap-2 rounded-2xl px-5 py-2.5 text-sm font-semibold disabled:opacity-60",
               tone === "destructive"

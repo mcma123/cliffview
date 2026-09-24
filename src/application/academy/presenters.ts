@@ -20,6 +20,7 @@ import type { Doc } from "../../../convex/_generated/dataModel";
 
 type AdminOverview = FunctionReturnType<typeof api.dashboard.adminOverview>;
 type ModuleLibrary = FunctionReturnType<typeof api.modules.listForAdmin>;
+type DeletionImpact = FunctionReturnType<typeof api.modules.deletionImpact>;
 type ModuleDetail = FunctionReturnType<typeof api.modules.adminDetail>;
 type LessonDetail = FunctionReturnType<typeof api.lessons.adminDetail>;
 type AssetDetail = FunctionReturnType<typeof api.assets.adminDetail>;
@@ -275,10 +276,15 @@ export function presentAdminOverview(data: AdminOverview, now: number) {
 export function presentAdminModuleLibrary(rows: ModuleLibrary, now: number) {
   return {
     summary: `${rows.length} modules. Manage copy, lessons, and media placeholders.`,
+    /** Checked by the server on a delete-all, so a stale screen cannot overreach. */
+    moduleCount: rows.length,
     modules: rows.map(({ module, lessonCount, assetCount }) => ({
       id: module._id,
       number: module.number,
       title: module.title,
+      // The slug is what a delete confirmation asks to be typed, so it has to
+      // reach the screen. The card only ever showed the title before.
+      slug: module.slug,
       category: module.category,
       publishState: module.publishState,
       publishLabel: formatPublishState(module.publishState),
@@ -287,6 +293,49 @@ export function presentAdminModuleLibrary(rows: ModuleLibrary, now: number) {
       updatedLabel: formatUpdatedLabel(module.contentUpdatedAt, now),
       href: getAdminModuleHref(module.slug),
     })),
+  };
+}
+
+/**
+ * The sentence a delete dialog leads with: what is about to be destroyed.
+ *
+ * Built from real counts rather than a vague warning, and it names the people
+ * separately from the content because they are a different kind of loss — an
+ * enrolment carries somebody's score and the date they finished.
+ */
+export function presentDeletionImpact(impact: DeletionImpact) {
+  const content = [
+    [impact.lessons, "lesson"],
+    [impact.assets, "file"],
+    [impact.objectives, "objective"],
+    [impact.questions, "question"],
+    [impact.aiDrafts, "AI draft"],
+  ] as const;
+
+  const parts = content
+    .filter(([count]) => count > 0)
+    .map(([count, noun]) => `${count} ${noun}${count === 1 ? "" : "s"}`);
+
+  const more = impact.truncated ? " (at least)" : "";
+
+  return {
+    slug: impact.slug,
+    title: impact.title,
+    enrollments: impact.enrollments,
+    /** What goes regardless of who is enrolled. */
+    contentLine:
+      parts.length === 0
+        ? "This module has no content in it yet."
+        : `Deletes ${parts.join(", ")}${more}.`,
+    /** Null when nobody is enrolled, so the dialog stays quiet about people. */
+    peopleLine:
+      impact.enrollments === 0
+        ? null
+        : `${impact.enrollments} staff ${impact.enrollments === 1 ? "member is" : "members are"} enrolled${
+            impact.completedEnrollments === 0
+              ? ""
+              : `, and ${impact.completedEnrollments} completed it`
+          }. Their scores and completion records go with it, and compliance is recalculated.`,
   };
 }
 
