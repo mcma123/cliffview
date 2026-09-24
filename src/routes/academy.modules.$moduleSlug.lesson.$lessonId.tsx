@@ -190,7 +190,14 @@ function LessonPage() {
           <p className="mt-2 text-sm text-muted-foreground">{lesson.durationLabel}</p>
         </header>
 
-        {lesson.hero === null ? null : <LessonMaterial material={lesson.hero} />}
+        {/*
+          Keyed, like the attachments below, because `LessonMaterial` pins the
+          signed URL it is first given for the life of its mount. Without a key
+          a genuinely different hero would inherit the previous one's URL.
+        */}
+        {lesson.hero === null ? null : (
+          <LessonMaterial key={lesson.hero.id} material={lesson.hero} />
+        )}
 
         {!isAssessment || view !== null ? null : (
           <section className="rounded-3xl border border-border bg-card p-8 text-center shadow-sm">

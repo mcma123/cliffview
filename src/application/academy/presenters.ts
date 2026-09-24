@@ -786,18 +786,11 @@ export function presentLearnerModuleDetail(data: LearnerModuleDetail, now: numbe
      * — never stored, and it expires, so it must not be cached anywhere that
      * outlives the page.
      */
-    featured:
-      featured === null
-        ? null
-        : {
-            title: featured.asset.title,
-            description: featured.asset.description,
-            kind: featured.asset.kind,
-            contentType: featured.asset.contentType ?? null,
-            fileName: featured.asset.fileName ?? null,
-            url: featured.url,
-            meta: formatAssetMeta(featured.asset),
-          },
+    // The same shaper the lesson page uses, so the module hero is rendered by
+    // `contentType` too. It used to be a hand-rolled near-duplicate keyed on
+    // `kind`, which meant a video uploaded through "Add placeholder asset" —
+    // hardcoded to `document` — got no player here at all, only a link out.
+    featured: featured === null ? null : presentLessonMaterial(featured.asset, featured.url),
     lessons: data.lessons.map(({ lesson, status, assetCount }) => ({
       id: lesson._id,
       slug: lesson.slug,

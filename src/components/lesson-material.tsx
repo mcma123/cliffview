@@ -1,23 +1,28 @@
-import {
-  Download,
-  ExternalLink,
-  FileText,
-  Headphones,
-  Image as ImageIcon,
-  Sparkles,
-  Video,
-} from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { Download, FileText, Headphones, Image as ImageIcon, Maximize2, Video } from "lucide-react";
 
 import type { LessonMaterialView } from "./lesson-material-view";
+import { materialAction } from "@/lib/lesson-media";
 import { cn } from "@/lib/utils";
 
-const KIND_ICONS = {
+/**
+ * The icon follows `media`, not `kind`.
+ *
+ * `kind` is a dropdown an admin picks from, and "Add placeholder asset"
+ * hardcodes `document` — so a perfectly good MP4 uploaded that way sat behind a
+ * document icon while playing as a video. `media` is resolved from the file's
+ * own content type, so it is the one that matches what the reader sees.
+ */
+const MEDIA_ICONS = {
   video: Video,
   audio: Headphones,
-  document: FileText,
-  worksheet: Sparkles,
+  pdf: FileText,
   image: ImageIcon,
+  download: FileText,
 } as const;
+
+/** A video element on iOS, which has fullscreen but not the standard call. */
+type IosVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 
 /**
  * One piece of lesson material, rendered the way its file can actually be read.
@@ -31,13 +36,59 @@ const KIND_ICONS = {
  * chrome.
  */
 export function LessonMaterial({ material }: { material: LessonMaterialView }) {
-  const Icon = KIND_ICONS[material.kind] ?? FileText;
-  const { url } = material;
+  const Icon = MEDIA_ICONS[material.media] ?? FileText;
+  const frameRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * The first URL this material was given, held for the life of the mount.
+   *
+   * `learn.lesson` mints a fresh signed R2 URL on every execution, and it also
+   * reads `lessonProgress` — so the moment the page records "in progress", the
+   * query re-runs and hands back a *different* URL for the very same bytes.
+   * Letting that reach `<video src>` tears the media element down and restarts
+   * the download from zero, which on a 57 MB file is most of the wait somebody
+   * notices. A signed URL lasts six hours, chosen in `lib/storage.ts` to
+   * "outlive any plausible cache lifetime", so pinning one for a mount is what
+   * that TTL is for. Keyed by asset id at the call site, so a genuinely
+   * different asset remounts and re-pins.
+   */
+  const [pinnedUrl] = useState(material.url);
+  const url = pinnedUrl ?? material.url;
+
+  const action = materialAction(material.media, url !== null);
+
+  const goFullscreen = useCallback(() => {
+    const element = frameRef.current;
+    if (element === null) return;
+
+    if (typeof element.requestFullscreen === "function") {
+      // Rejects when the browser refuses — a gesture it did not trust, or a
+      // permissions policy. Nothing to recover, but an unhandled rejection in
+      // the console is worse than silence.
+      void element.requestFullscreen().catch(() => undefined);
+      return;
+    }
+
+    // iOS Safari has no element fullscreen except on a video, where it is
+    // spelled differently and returns nothing.
+    const video = element as IosVideo;
+    if (typeof video.webkitEnterFullscreen === "function") {
+      video.webkitEnterFullscreen();
+      return;
+    }
+
+    // Neither exists. Opening the file is worse than fullscreen but far better
+    // than a button that does nothing at all.
+    if (url !== null) window.open(url, "_blank", "noreferrer");
+  }, [url]);
 
   return (
     <article className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
       {url !== null && material.media === "video" ? (
         <video
+          ref={(node) => {
+            frameRef.current = node;
+          }}
           controls
           playsInline
           preload="metadata"
@@ -52,7 +103,14 @@ export function LessonMaterial({ material }: { material: LessonMaterialView }) {
         // The title is the alt text: it is the only description of the image
         // anybody wrote, and an empty alt would hide it from a screen reader
         // entirely rather than mark it decorative, which it is not.
-        <img src={url} alt={material.title} className="w-full bg-muted object-contain" />
+        <img
+          ref={(node) => {
+            frameRef.current = node;
+          }}
+          src={url}
+          alt={material.title}
+          className="w-full bg-muted object-contain"
+        />
       ) : null}
 
       <div className="p-6">
@@ -68,6 +126,9 @@ export function LessonMaterial({ material }: { material: LessonMaterialView }) {
               screen reader announces for the frame.
             */}
             <iframe
+              ref={(node) => {
+                frameRef.current = node;
+              }}
               title={material.title}
               src={url}
               className="h-[36rem] w-full rounded-2xl border border-border bg-muted"
@@ -85,7 +146,7 @@ export function LessonMaterial({ material }: { material: LessonMaterialView }) {
               )}
               <p className="mt-1 text-xs text-muted-foreground">
                 {material.meta}
-                {material.media === "download" && url !== null ? (
+                {action === "download" ? (
                   // Said plainly rather than offering a preview that cannot
                   // work: a browser has no way to display Word or PowerPoint.
                   <span> · opens in the app it was made with</span>
@@ -98,30 +159,32 @@ export function LessonMaterial({ material }: { material: LessonMaterialView }) {
             <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               No file yet
             </span>
-          ) : (
+          ) : action === "download" ? (
             <a
               href={url}
-              target="_blank"
-              rel="noreferrer"
-              // `download` is deliberately absent: for a PDF or an image the
-              // useful action is to open it, and the browser decides. Forcing a
-              // save would fight the viewer embedded right above.
+              download={material.fileName ?? undefined}
               className={cn(
                 "inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border px-4 py-2.5",
                 "text-sm font-semibold text-foreground transition-colors hover:bg-muted",
               )}
             >
-              {material.media === "download" ? (
-                <>
-                  <Download className="h-4 w-4" /> Download
-                </>
-              ) : (
-                <>
-                  <ExternalLink className="h-4 w-4" /> Open full screen
-                </>
-              )}
+              <Download className="h-4 w-4" /> Download
             </a>
-          )}
+          ) : action === "fullscreen" ? (
+            // A button, not a link. It used to be an anchor to the signed URL,
+            // which threw a teacher out of the lesson into a new tab to watch
+            // a video that was already playing in front of them.
+            <button
+              type="button"
+              onClick={goFullscreen}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border px-4 py-2.5",
+                "text-sm font-semibold text-foreground transition-colors hover:bg-muted",
+              )}
+            >
+              <Maximize2 className="h-4 w-4" /> Full screen
+            </button>
+          ) : null}
         </div>
       </div>
     </article>

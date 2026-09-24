@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Circle,
   Clock,
-  Download,
   FileText,
   Headphones,
   Play,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { presentLearnerModuleDetail } from "@/application/academy/presenters";
+import { LessonMaterial } from "@/components/lesson-material";
 import { PageNotice } from "@/components/page-notice";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
@@ -140,55 +140,11 @@ function ModuleOverview() {
         {/*
           The module hero. This is where an uploaded module video actually
           lives — `modules.featuredAssetId`, not the per-lesson attachment
-          list. The URL is a short-lived signed R2 link resolved per read, so
-          it is rendered straight into the player and never cached anywhere.
+          list. Rendered by the same component as a lesson's material, so it
+          plays in place and goes fullscreen in the app rather than opening the
+          signed URL in a new tab.
         */}
-        {featured === null ? null : (
-          <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
-            {featured.url !== null && featured.kind === "video" ? (
-              <video
-                controls
-                playsInline
-                preload="metadata"
-                className="aspect-video w-full bg-black"
-                src={featured.url}
-              >
-                Your browser cannot play this video.
-              </video>
-            ) : featured.url !== null && featured.kind === "audio" ? (
-              <div className="p-6">
-                <audio controls preload="metadata" className="w-full" src={featured.url}>
-                  Your browser cannot play this audio.
-                </audio>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap items-start justify-between gap-4 p-6">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  Featured {featured.kind}
-                </p>
-                <h2 className="mt-1 text-lg font-bold text-foreground">{featured.title}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{featured.description}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{featured.meta}</p>
-              </div>
-              {featured.url === null ? (
-                <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                  No file uploaded yet
-                </span>
-              ) : (
-                <a
-                  href={featured.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-2xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
-                >
-                  <Download className="h-4 w-4" /> Open
-                </a>
-              )}
-            </div>
-          </section>
-        )}
+        {featured === null ? null : <LessonMaterial key={featured.id} material={featured} />}
 
         {module.objectives.length === 0 ? null : (
           <section className="rounded-3xl border border-border bg-card p-8 shadow-sm">
