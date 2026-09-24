@@ -1,12 +1,19 @@
 import { ConvexError, v } from "convex/values";
 
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { recordAudit } from "./lib/audit";
 import { requireAdmin } from "./lib/authz";
 import { MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
+import {
+  assignableStaff,
+  enrollmentTotals,
+  grantModules,
+  publishedModules,
+  recomputeCompliance,
+} from "./lib/enrollment";
 import { hasPasswordAccount } from "./invites";
 import { rekeyPasswordAccount } from "./lib/credentials";
 import { revokeLiveInvites } from "./lib/invites";
@@ -38,51 +45,6 @@ const ASSIGNABLE_ROLES = new Set<Doc<"users">["accessRole"]>(["staff", "smt_admi
 /** True for rows that represent an operator login rather than a member of staff. */
 function isOperator(user: Doc<"users">): boolean {
   return user.accessRole === "super_admin";
-}
-
-/**
- * Recompute a person's stored compliance from their enrollment rows.
- *
- * The mean of `enrollments.progressPercent`, which is **exactly** the formula
- * `convex/seed.ts` used. It has to be: if this disagreed with the seed, the
- * first edit to any seeded profile would silently rewrite a number that was
- * correct, and the dashboard would move for no reason a reader could see.
- *
- * `compliancePercent` stays a stored column rather than being derived at read
- * time because `dashboard.adminOverview` also reads it; deriving it in one
- * place and reading the column in the other is how two screens come to
- * disagree. One source, recomputed whenever a profile is touched.
- */
-async function recomputeCompliance(ctx: MutationCtx, userId: Id<"users">): Promise<number> {
-  const enrollments = await ctx.db
-    .query("enrollments")
-    .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId))
-    .take(MAX_MODULES);
-
-  const compliancePercent =
-    enrollments.length === 0
-      ? 0
-      : Math.round(
-          enrollments.reduce((sum, row) => sum + row.progressPercent, 0) / enrollments.length,
-        );
-
-  await ctx.db.patch("users", userId, { compliancePercent });
-  return compliancePercent;
-}
-
-/** Enrollment rollup for one person. Bounded by the module count. */
-async function enrollmentTotals(
-  ctx: QueryCtx,
-  userId: Id<"users">,
-): Promise<{ assigned: number; completed: number }> {
-  const enrollments = await ctx.db
-    .query("enrollments")
-    .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId))
-    .take(MAX_MODULES);
-  return {
-    assigned: enrollments.length,
-    completed: enrollments.filter((row) => row.status === "completed").length,
-  };
 }
 
 async function staffOrThrow(ctx: MutationCtx, staffId: Id<"users">): Promise<Doc<"users">> {
@@ -209,6 +171,14 @@ export const directory = query({
     ),
     /** Active phases, oldest-ordered, for the phase selector. */
     phases: v.array(schema.doc("phases")),
+    /**
+     * The denominator a bulk assign would use.
+     *
+     * The table shows "3 / 5" per person but had no idea how many modules
+     * exist, so the screen could not say what "all modules" means before an
+     * admin commits to it.
+     */
+    publishedModuleCount: v.number(),
   }),
   handler: async (ctx) => {
     await requireAdmin(ctx);
@@ -237,7 +207,11 @@ export const directory = query({
       ),
     );
 
-    return { staff, phases: phaseRows.filter((phase) => phase.isActive) };
+    return {
+      staff,
+      phases: phaseRows.filter((phase) => phase.isActive),
+      publishedModuleCount: (await publishedModules(ctx)).length,
+    };
   },
 });
 
@@ -608,10 +582,8 @@ export const assignModules = mutation({
       });
     }
 
-    const assignedAt = Date.now();
-    let assigned = 0;
-    let alreadyAssigned = 0;
-
+    // Validate the whole set before writing anything. A draft aborts the
+    // transaction, so a half-applied selection is not reachable.
     for (const moduleId of moduleIds) {
       const module = await ctx.db.get("modules", moduleId);
       if (module === null) {
@@ -623,36 +595,20 @@ export const assignModules = mutation({
           message: `"${module.title}" is not published yet, so it cannot be assigned. Publish it first.`,
         });
       }
-
-      const existing = await ctx.db
-        .query("enrollments")
-        .withIndex("by_userId_and_moduleId", (q) =>
-          q.eq("userId", user._id).eq("moduleId", module._id),
-        )
-        .unique();
-      if (existing !== null) {
-        alreadyAssigned += 1;
-        continue;
-      }
-
-      await ctx.db.insert("enrollments", {
-        userId: user._id,
-        moduleId: module._id,
-        // Earned, never assigned — the same rule the profile form follows.
-        // A brand-new assignment is genuinely at zero.
-        status: "not_started",
-        progressPercent: 0,
-        assignedAt,
-        ...(args.dueAt === undefined ? {} : { dueAt: args.dueAt }),
-      });
-      assigned += 1;
     }
 
-    // Assigning work lowers compliance, because compliance is the mean of what
-    // somebody has been given. That is the honest number: a person with one
-    // finished module out of one is not as compliant as the school needs once
-    // eight more land on them.
-    await recomputeCompliance(ctx, user._id);
+    // The insert itself is shared with the bulk path, so there is one place a
+    // row is created and one place compliance is recomputed after it. Assigning
+    // work lowers compliance, because compliance is the mean of what somebody
+    // has been given: a person with one finished module out of one is not as
+    // compliant as the school needs once eight more land on them.
+    const { assigned, alreadyAssigned } = await grantModules(
+      ctx,
+      user._id,
+      moduleIds,
+      Date.now(),
+      args.dueAt,
+    );
 
     await recordAudit(ctx, {
       actor,
@@ -734,6 +690,121 @@ export const unassignModule = mutation({
       entityId: user._id,
       summary: `${user.firstName} ${user.lastName}: removed ${args.moduleId}`,
     });
+    return null;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// School-wide assignment
+// ---------------------------------------------------------------------------
+
+/**
+ * Give every active member of staff every published module.
+ *
+ * The one-by-one alternative is the reason this exists: open a profile, open
+ * the picker, tick, save, go back, repeat. What that produces in practice is a
+ * half-assigned school, and somebody nobody got to reads as 0% compliant —
+ * indistinguishable on the dashboard from somebody who has done nothing.
+ *
+ * **Why this schedules instead of looping.** Per person the work is one
+ * existence read plus one insert per module, plus a compliance recompute that
+ * re-reads their whole tracker. At the caps this file already honours —
+ * `MAX_STAFF` 500 by `MAX_MODULES` 200 — that is hundreds of thousands of
+ * document touches, far past one Convex transaction. It would run fine today
+ * on six people and ten modules and then fail on a real secondary school, with
+ * a transaction-limit error nobody could act on. So the continuation is
+ * scheduled per staff member, which is bounded by the catalogue however large
+ * the school gets.
+ *
+ * The consequence, stated rather than hidden: this is **not atomic**. A failure
+ * part-way leaves earlier staff assigned and later ones not. That is safe here
+ * because granting is additive and idempotent — running it again finishes the
+ * job instead of doubling anything — and it is the trade the scheduler
+ * guidance in `_generated/ai/guidelines.md` asks for.
+ */
+export const assignAllModules = mutation({
+  args: {},
+  returns: v.object({
+    staffCount: v.number(),
+    moduleCount: v.number(),
+  }),
+  handler: async (ctx) => {
+    const actor = await requireAdmin(ctx);
+
+    const modules = await publishedModules(ctx);
+    if (modules.length === 0) {
+      // A button that silently does nothing reads as broken. Name the reason.
+      throw new ConvexError({
+        code: "NOTHING_TO_ASSIGN",
+        message: "There are no published modules yet. Publish one first.",
+      });
+    }
+
+    const staff = await assignableStaff(ctx);
+    if (staff.length === 0) {
+      throw new ConvexError({
+        code: "NOTHING_TO_ASSIGN",
+        message: "There are no active staff to assign modules to.",
+      });
+    }
+
+    const moduleIds = modules.map((module) => module._id);
+    const staffIds = staff.map((user) => user._id);
+
+    // One row for the decision, not one per person. A 500-strong school would
+    // otherwise write 500 audit rows for a single click, burying every other
+    // entry in the log.
+    await recordAudit(ctx, {
+      actor,
+      action: "staff.assignAllModules",
+      entityTable: "users",
+      entityId: "all",
+      summary: `${modules.length} published modules to ${staff.length} active staff`,
+    });
+
+    await ctx.scheduler.runAfter(0, internal.staff.assignAllStep, {
+      moduleIds,
+      staffIds,
+      index: 0,
+    });
+
+    return { staffCount: staff.length, moduleCount: modules.length };
+  },
+});
+
+/**
+ * One staff member's share of a school-wide assignment, then the next.
+ *
+ * `internalMutation`, so it is unreachable from any client: it does no
+ * authorization of its own, having been gated once by the mutation that
+ * scheduled it, and an exposed version would let anyone assign anything.
+ *
+ * A person who was deleted or deactivated between one step and the next is
+ * skipped rather than throwing — the alternative is a bulk action that dies
+ * part-way because somebody resigned while it ran.
+ */
+export const assignAllStep = internalMutation({
+  args: {
+    moduleIds: v.array(v.id("modules")),
+    staffIds: v.array(v.id("users")),
+    index: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.index >= args.staffIds.length) return null;
+
+    const user = await ctx.db.get("users", args.staffIds[args.index]);
+    if (user !== null && user.employmentStatus === "active" && !isOperator(user)) {
+      await grantModules(ctx, user._id, args.moduleIds, Date.now());
+    }
+
+    if (args.index + 1 < args.staffIds.length) {
+      await ctx.scheduler.runAfter(0, internal.staff.assignAllStep, {
+        moduleIds: args.moduleIds,
+        staffIds: args.staffIds,
+        index: args.index + 1,
+      });
+    }
     return null;
   },
 });

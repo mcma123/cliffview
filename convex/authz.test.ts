@@ -375,6 +375,42 @@ describe("requireAdmin on the lesson material mutations", () => {
   });
 });
 
+/**
+ * `assignAllStep` has no test here on purpose. It is an `internalMutation`, so
+ * the runtime keeps it off the public API — but `convex-test` resolves
+ * functions by path regardless of internal-ness, so a test asserting it is
+ * unreachable would pass whether or not that were true. The gate that IS
+ * testable is the one on the mutation that schedules it, below.
+ */
+describe("requireAdmin on the school-wide assignment", () => {
+  test("no identity is refused", async () => {
+    const t = newTest();
+    await seedFixture(t);
+    await expect(t.mutation(api.staff.assignAllModules, {})).rejects.toThrow(
+      /UNAUTHENTICATED|Sign in/i,
+    );
+  });
+
+  test("a staff identity is refused", async () => {
+    const t = newTest();
+    const { staffId } = await seedFixture(t);
+    // Assigning the whole school's training is an administrative act, and this
+    // mutation takes no arguments — the only thing standing between a signed-in
+    // teacher and rewriting every tracker is the gate.
+    await expect(asUser(t, staffId).mutation(api.staff.assignAllModules, {})).rejects.toThrow(
+      /FORBIDDEN|Admin access/i,
+    );
+  });
+
+  test("an inactive admin is refused", async () => {
+    const t = newTest();
+    const { inactiveAdminId } = await seedFixture(t);
+    await expect(
+      asUser(t, inactiveAdminId).mutation(api.staff.assignAllModules, {}),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+  });
+});
+
 describe("the seed refuses to wipe populated tables", () => {
   test("reset without iAmSure is refused once a module exists", async () => {
     const t = newTest();

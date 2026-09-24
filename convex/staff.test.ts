@@ -5,7 +5,7 @@ import rateLimiter from "@convex-dev/rate-limiter/test";
 import resendComponent from "@convex-dev/resend/test";
 import workpool from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -838,5 +838,222 @@ describe("unassigning a module", () => {
       admin().mutation(api.staff.unassignModule, { staffId, moduleId: assignedModuleId }),
     ).rejects.toThrow(/IN_PROGRESS|already started/i);
     expect(await remaining()).toHaveLength(1);
+  });
+});
+
+describe("assigning every module to everybody", () => {
+  /** The fixture module is a draft; publish it and add a second published one. */
+  async function catalogue() {
+    return await t.run(async (ctx) => {
+      await ctx.db.patch("modules", moduleId, { publishState: "published" });
+      const second = await ctx.db.insert("modules", {
+        slug: "second-module",
+        number: "02",
+        sequence: 2,
+        title: "Second Module",
+        description: "d",
+        audience: "a",
+        outcome: "o",
+        category: "Core Policies" as const,
+        durationMinutes: 10,
+        cptdPoints: 1,
+        passMark: 80,
+        format: "Self-paced",
+        publishState: "published" as const,
+        contentUpdatedAt: Date.now(),
+      });
+      const draft = await ctx.db.insert("modules", {
+        slug: "still-a-draft",
+        number: "03",
+        sequence: 3,
+        title: "Still A Draft",
+        description: "d",
+        audience: "a",
+        outcome: "o",
+        category: "Core Policies" as const,
+        durationMinutes: 10,
+        cptdPoints: 1,
+        passMark: 80,
+        format: "Self-paced",
+        publishState: "draft" as const,
+        contentUpdatedAt: Date.now(),
+      });
+      return { second, draft };
+    });
+  }
+
+  /**
+   * Drain the scheduled continuation chain.
+   *
+   * Fake timers only for this call, per convex-test's own note: steps queued
+   * with `runAfter(0)` while real timers were active are still drained, and
+   * leaving the clock faked would affect every other test in the file.
+   */
+  async function drain() {
+    vi.useFakeTimers();
+    try {
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  /** Runs the whole scheduled chain to completion. */
+  async function runBulk() {
+    const result = await admin().mutation(api.staff.assignAllModules, {});
+    await drain();
+    return result;
+  }
+
+  /** Module ids on one person's tracker. */
+  async function trackerOf(userId: Id<"users">) {
+    return await t.run(async (ctx) => {
+      const rows = await ctx.db
+        .query("enrollments")
+        .withIndex("by_userId_and_moduleId", (q) => q.eq("userId", userId))
+        .take(100);
+      return rows.map((row) => row.moduleId);
+    });
+  }
+
+  test("every active staff member gets every published module", async () => {
+    const { second } = await catalogue();
+
+    const result = await runBulk();
+
+    expect(result).toEqual({ staffCount: 2, moduleCount: 2 });
+    for (const who of [adminId, staffId]) {
+      expect((await trackerOf(who)).sort()).toEqual([moduleId, second].sort());
+    }
+  });
+
+  test("a draft is skipped rather than aborting the whole run", async () => {
+    // `assignModules` throws on the first draft, which for a school-wide action
+    // would mean one unfinished module blocks everybody.
+    const { draft } = await catalogue();
+
+    await runBulk();
+
+    expect(await trackerOf(staffId)).not.toContain(draft);
+    expect(await trackerOf(staffId)).toHaveLength(2);
+  });
+
+  test("the operator and departed staff are left out", async () => {
+    await catalogue();
+    const operatorId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          phaseId,
+          employmentStatus: "active" as const,
+          cptdPoints: 0,
+          xpTotal: 0,
+          compliancePercent: 0,
+          jobTitle: "Operator",
+          firstName: "System",
+          lastName: "Operator",
+          email: "operator@cliffview.example",
+          accessRole: "super_admin" as const,
+        }),
+    );
+
+    const result = await runBulk();
+
+    // An operator is a login, not a person; somebody who has left is not the
+    // school's compliance. Same scope the dashboard counts.
+    expect(result.staffCount).toBe(2);
+    expect(await trackerOf(operatorId)).toHaveLength(0);
+    expect(await trackerOf(inactiveAdminId)).toHaveLength(0);
+  });
+
+  test("running it twice assigns nothing the second time", async () => {
+    await catalogue();
+    await runBulk();
+    const after = await trackerOf(staffId);
+
+    await runBulk();
+
+    // Idempotent by the natural key. A duplicate row would be counted twice in
+    // the compliance mean, so this is not merely tidiness.
+    expect(await trackerOf(staffId)).toHaveLength(after.length);
+  });
+
+  test("progress on a module somebody already had is untouched", async () => {
+    await catalogue();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("enrollments", {
+        userId: staffId,
+        moduleId,
+        status: "in_progress",
+        progressPercent: 60,
+        assignedAt: Date.now(),
+      });
+    });
+
+    await runBulk();
+
+    const row = await t.run(
+      async (ctx) =>
+        (await ctx.db
+          .query("enrollments")
+          .withIndex("by_userId_and_moduleId", (q) =>
+            q.eq("userId", staffId).eq("moduleId", moduleId),
+          )
+          .unique())!,
+    );
+    expect(row.status).toBe("in_progress");
+    expect(row.progressPercent).toBe(60);
+  });
+
+  test("compliance is recomputed for everybody afterwards", async () => {
+    await catalogue();
+    await t.run(async (ctx) => {
+      // Somebody finished one module before the bulk run.
+      await ctx.db.insert("enrollments", {
+        userId: staffId,
+        moduleId,
+        status: "completed",
+        progressPercent: 100,
+        assignedAt: Date.now(),
+      });
+      await ctx.db.patch("users", staffId, { compliancePercent: 100 });
+    });
+
+    await runBulk();
+
+    // One finished of two assigned. The drop is the honest number: assigning
+    // work lowers compliance until the work is done.
+    const after = await t.run(async (ctx) => (await ctx.db.get("users", staffId))!);
+    expect(after.compliancePercent).toBe(50);
+  });
+
+  test("it refuses when nothing is published", async () => {
+    await expect(admin().mutation(api.staff.assignAllModules, {})).rejects.toThrow(
+      /NOTHING_TO_ASSIGN|no published modules/i,
+    );
+  });
+
+  test("publishing a module hands it to every active staff member", async () => {
+    // `modules.publish` refuses a module with no published lesson, so the
+    // fixture needs one before this can reach the assignment step at all.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("lessons", {
+        moduleId,
+        slug: "only-lesson",
+        title: "Only Lesson",
+        summary: "s",
+        kind: "reading" as const,
+        order: 1,
+        publishState: "published" as const,
+        contentUpdatedAt: Date.now(),
+      });
+    });
+
+    const result = await admin().mutation(api.modules.publish, { moduleId });
+    await drain();
+
+    expect(result).toEqual({ assignedTo: 2 });
+    expect(await trackerOf(staffId)).toEqual([moduleId]);
+    expect(await trackerOf(adminId)).toEqual([moduleId]);
+    expect(await trackerOf(inactiveAdminId)).toHaveLength(0);
   });
 });

@@ -1,12 +1,13 @@
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { Award, ChevronRight, Search, TrendingUp, UserPlus, Users } from "lucide-react";
+import { Award, ChevronRight, Layers, Search, TrendingUp, UserPlus, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { complianceMeterClass, presentAdminStaffDirectory } from "@/application/academy/presenters";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
+import { BulkAssignDialog } from "@/components/bulk-assign-dialog";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { errorMessage } from "@/lib/convex-error";
@@ -44,6 +45,29 @@ function AdminStaffIndexComponent() {
   const data = presentAdminStaffDirectory(directory, now);
 
   const createStaff = useMutation({ mutationFn: useConvexMutation(api.staff.create) });
+  const assignAll = useMutation({ mutationFn: useConvexMutation(api.staff.assignAllModules) });
+
+  /**
+   * Hand every published module to every active staff member.
+   *
+   * The write is scheduled per person on the server, so this resolves as soon
+   * as the run is queued rather than when it finishes. The toast says so, and
+   * the table's "N / M" column is a live subscription that fills in as each
+   * step lands — a truer progress indicator than a spinner, and free.
+   */
+  async function bulkAssign() {
+    try {
+      const result = await assignAll.mutateAsync({});
+      toast.success(
+        `Assigning ${result.moduleCount} module${result.moduleCount === 1 ? "" : "s"} to ${result.staffCount} staff member${result.staffCount === 1 ? "" : "s"}.`,
+        { description: "The Modules column fills in as it goes." },
+      );
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not assign the modules."));
+      // Rethrown so the dialog stays open rather than dismissing on a refusal.
+      throw caught;
+    }
+  }
 
   // Seeded once, at mount, and deliberately not kept in sync afterwards: the
   // input is the filter, and writing every keystroke back to the URL would
@@ -93,6 +117,15 @@ function AdminStaffIndexComponent() {
                 className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm font-medium text-foreground outline-none transition-colors hover:border-gold focus:border-gold focus:ring-1 focus:ring-gold"
               />
             </div>
+            <BulkAssignDialog
+              staffCount={data.summary.totalStaff}
+              moduleCount={data.publishedModuleCount}
+              onConfirm={bulkAssign}
+            >
+              <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold hover:text-gold">
+                <Layers className="h-4 w-4" /> Assign all modules
+              </button>
+            </BulkAssignDialog>
             <AddStaffDialog
               phases={data.phaseOptions}
               onCreate={async (input) => {

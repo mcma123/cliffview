@@ -571,6 +571,9 @@ export function presentAdminStaffDirectory(data: StaffDirectory, now: number) {
     },
     rows,
     phaseOptions: data.phases.map((phase) => ({ id: phase._id, name: phase.name })),
+    // The denominator a bulk assign uses, so the confirm dialog can state its
+    // arithmetic before an admin commits to it.
+    publishedModuleCount: data.publishedModuleCount,
   };
 }
 

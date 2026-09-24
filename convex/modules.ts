@@ -5,6 +5,8 @@ import type { MutationCtx } from "./_generated/server";
 import { recordAudit, stamp } from "./lib/audit";
 import { assertAssessmentReady } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
+import { assignableStaff } from "./lib/enrollment";
+import { internal } from "./_generated/api";
 import { moduleCategory, publishState } from "./validators";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -398,7 +400,8 @@ export const update = mutation({
  */
 export const publish = mutation({
   args: { moduleId: v.id("modules") },
-  returns: v.null(),
+  /** How many active staff the module was handed to on the way out. */
+  returns: v.object({ assignedTo: v.number() }),
   handler: async (ctx, args) => {
     const actor = await requireAdmin(ctx);
     const module = await moduleOrThrow(ctx, args.moduleId);
@@ -444,13 +447,31 @@ export const publish = mutation({
       publishedAt: Date.now(),
       ...stamp(),
     });
+    // Publishing is what makes a module somebody's work, so it hands it to
+    // everybody on the way out. Without this the catalogue and the trackers
+    // drift apart every time content is added, and the drift is invisible:
+    // nothing on any screen says "nine people are missing this module".
+    //
+    // Scheduled rather than looped, for the same reason `staff.assignAllModules`
+    // schedules — one module across 500 staff is bounded, but it shares that
+    // mutation's step so there is one implementation of the walk.
+    const staff = await assignableStaff(ctx);
+    if (staff.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.staff.assignAllStep, {
+        moduleIds: [module._id],
+        staffIds: staff.map((user) => user._id),
+        index: 0,
+      });
+    }
+
     await recordAudit(ctx, {
       actor,
       action: "module.publish",
       entityTable: "modules",
       entityId: module._id,
+      summary: `assigned to ${staff.length} active staff`,
     });
-    return null;
+    return { assignedTo: staff.length };
   },
 });
 
