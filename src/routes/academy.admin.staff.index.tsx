@@ -1,16 +1,29 @@
 import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
+import { useConvex } from "convex/react";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { Award, ChevronRight, Layers, Search, TrendingUp, UserPlus, Users } from "lucide-react";
+import {
+  Award,
+  ChevronRight,
+  Layers,
+  Search,
+  TrendingUp,
+  Upload,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { complianceMeterClass, presentAdminStaffDirectory } from "@/application/academy/presenters";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
 import { BulkAssignDialog } from "@/components/bulk-assign-dialog";
+import { StaffImportDialog, type ImportReport } from "@/components/staff-import-dialog";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { errorMessage } from "@/lib/convex-error";
+import { csvFileName, downloadCsv, toCsv } from "@/lib/csv";
+import { TEMPLATE_HEADERS, readStaffFile, type ParsedStaffRow } from "@/lib/staff-import";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -46,6 +59,75 @@ function AdminStaffIndexComponent() {
 
   const createStaff = useMutation({ mutationFn: useConvexMutation(api.staff.create) });
   const assignAll = useMutation({ mutationFn: useConvexMutation(api.staff.assignAllModules) });
+  const importStaff = useMutation({ mutationFn: useConvexMutation(api.staff.importStaff) });
+  const convex = useConvex();
+
+  // Held between the two steps: the preview shows what the server said about
+  // these rows, and the import sends the same ones back.
+  const [importRows, setImportRows] = useState<ParsedStaffRow[]>([]);
+
+  /**
+   * Parse a picked spreadsheet, then ask the server what it makes of it.
+   *
+   * The parse is structural only — it decides nothing about whether a row may
+   * be created. `staff.importPreview` does that, so what the admin approves is
+   * the same judgement the import will re-run.
+   */
+  async function previewFile(file: File): Promise<ImportReport | null> {
+    const parsed = await readStaffFile(file);
+    if (parsed.error !== null) {
+      toast.error(parsed.error);
+      setImportRows([]);
+      return null;
+    }
+    if (parsed.rows.length === 0) {
+      toast.error("That file has a header but no staff in it.");
+      setImportRows([]);
+      return null;
+    }
+    if (parsed.ignoredColumns.length > 0) {
+      toast.info(`Ignoring ${parsed.ignoredColumns.length} column(s) this import has no use for.`, {
+        description: parsed.ignoredColumns.join(", "),
+      });
+    }
+
+    try {
+      const report = await convex.query(api.staff.importPreview, { rows: parsed.rows });
+      setImportRows(parsed.rows);
+      return report;
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not read that file."));
+      setImportRows([]);
+      return null;
+    }
+  }
+
+  async function commitImport(): Promise<ImportReport | null> {
+    try {
+      const report = await importStaff.mutateAsync({ rows: importRows });
+      toast.success(
+        `${report.ready} staff member${report.ready === 1 ? "" : "s"} added.`,
+        report.skipped + report.invalid === 0
+          ? undefined
+          : {
+              description: `${report.skipped} already on the system, ${report.invalid} could not be imported.`,
+            },
+      );
+      setImportRows([]);
+      return report;
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not import that file."));
+      return null;
+    }
+  }
+
+  /** Headers only — `toCsv` with no rows is exactly a template. */
+  function downloadTemplate() {
+    downloadCsv(
+      csvFileName("staff-import-template", now),
+      toCsv({ headers: TEMPLATE_HEADERS, rows: [] }),
+    );
+  }
 
   /**
    * Hand every published module to every active staff member.
@@ -117,6 +199,15 @@ function AdminStaffIndexComponent() {
                 className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-4 text-sm font-medium text-foreground outline-none transition-colors hover:border-gold focus:border-gold focus:ring-1 focus:ring-gold"
               />
             </div>
+            <StaffImportDialog
+              onFile={previewFile}
+              onImport={commitImport}
+              onTemplate={downloadTemplate}
+            >
+              <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold hover:text-gold">
+                <Upload className="h-4 w-4" /> Import staff
+              </button>
+            </StaffImportDialog>
             <BulkAssignDialog
               staffCount={data.summary.totalStaff}
               moduleCount={data.publishedModuleCount}

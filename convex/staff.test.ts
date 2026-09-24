@@ -1057,3 +1057,191 @@ describe("assigning every module to everybody", () => {
     expect(await trackerOf(inactiveAdminId)).toHaveLength(0);
   });
 });
+
+describe("importing staff from a spreadsheet", () => {
+  /** One parsed row, with sensible defaults so a test states only what it means. */
+  function row(over: Partial<Record<string, string | number>> = {}) {
+    return {
+      line: 2,
+      honorific: "",
+      firstName: "Nomsa",
+      lastName: "Khumalo",
+      preferredName: "",
+      email: "nomsa@cliffview.example",
+      jobTitle: "Teacher",
+      accessRole: "",
+      phase: "Foundation Phase",
+      ...over,
+    } as {
+      line: number;
+      honorific: string;
+      firstName: string;
+      lastName: string;
+      preferredName: string;
+      email: string;
+      jobTitle: string;
+      accessRole: string;
+      phase: string;
+    };
+  }
+
+  const importRows = async (rows: ReturnType<typeof row>[]) =>
+    await admin().mutation(api.staff.importStaff, { rows });
+
+  const findByEmail = async (email: string) =>
+    await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("users")
+          .withIndex("email", (q) => q.eq("email", email))
+          .first(),
+    );
+
+  test("a clean file creates everybody in it", async () => {
+    const report = await importRows([
+      row(),
+      row({ line: 3, firstName: "Thabo", lastName: "Dlamini", email: "thabo@cliffview.example" }),
+    ]);
+
+    expect(report).toMatchObject({ ready: 2, skipped: 0, invalid: 0 });
+    const created = await findByEmail("nomsa@cliffview.example");
+    expect(created).toMatchObject({
+      firstName: "Nomsa",
+      jobTitle: "Teacher",
+      accessRole: "staff",
+      employmentStatus: "active",
+      // Earned, never assigned.
+      compliancePercent: 0,
+      cptdPoints: 0,
+      xpTotal: 0,
+    });
+  });
+
+  test("importing sends nobody an email", async () => {
+    // The whole reason this does not call `staff.create`: that schedules
+    // `invites.deliver` for every staff-role row, so a fifty-row file would
+    // mail fifty people — including whoever is behind a typo.
+    await importRows([row(), row({ line: 3, email: "thabo@cliffview.example" })]);
+
+    vi.useFakeTimers();
+    try {
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const invites = await t.run(async (ctx) => await ctx.db.query("staffInvites").take(10));
+    expect(invites).toHaveLength(0);
+  });
+
+  test("an email already on the system is skipped, not overwritten", async () => {
+    const before = await findByEmail("sam.staff@cliffview.example");
+    const report = await importRows([
+      row({ email: "sam.staff@cliffview.example", firstName: "Impostor", jobTitle: "Principal" }),
+    ]);
+
+    expect(report).toMatchObject({ ready: 0, skipped: 1, invalid: 0 });
+    const after = await findByEmail("sam.staff@cliffview.example");
+    expect(after!._id).toBe(before!._id);
+    expect(after!.firstName).toBe("Sam");
+    expect(after!.jobTitle).toBe("Teacher");
+  });
+
+  test("the same address twice in one file imports once", async () => {
+    const report = await importRows([
+      row(),
+      row({ line: 3, firstName: "Nomsa", lastName: "Duplicate" }),
+    ]);
+
+    expect(report).toMatchObject({ ready: 1, invalid: 1 });
+    expect(report.rows[1].reason).toMatch(/row 2/);
+    const all = await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("users")
+          .withIndex("email", (q) => q.eq("email", "nomsa@cliffview.example"))
+          .take(10),
+    );
+    expect(all).toHaveLength(1);
+  });
+
+  test("email is matched case-insensitively against what is stored", async () => {
+    const report = await importRows([row({ email: "SAM.STAFF@Cliffview.Example" })]);
+    expect(report).toMatchObject({ ready: 0, skipped: 1 });
+  });
+
+  test("a row missing something required is rejected with the reason", async () => {
+    const report = await importRows([
+      row({ email: "" }),
+      row({ line: 3, email: "a@b.example", firstName: "" }),
+      row({ line: 4, email: "c@d.example", jobTitle: "  " }),
+      row({ line: 5, email: "not-an-email" }),
+    ]);
+
+    expect(report).toMatchObject({ ready: 0, invalid: 4 });
+    expect(report.rows.map((r) => r.reason)).toEqual([
+      "No email address.",
+      "No first name.",
+      "No job title.",
+      '"not-an-email" is not an email address.',
+    ]);
+  });
+
+  test("an unknown phase names the ones that would work", async () => {
+    const report = await importRows([row({ phase: "Foundtion" })]);
+    expect(report.invalid).toBe(1);
+    expect(report.rows[0].reason).toContain("Foundation Phase");
+  });
+
+  test("a blank role means staff, and admin is understood", async () => {
+    await importRows([
+      row({ accessRole: "" }),
+      row({ line: 3, email: "hod@cliffview.example", accessRole: "Admin" }),
+    ]);
+
+    expect((await findByEmail("nomsa@cliffview.example"))!.accessRole).toBe("staff");
+    expect((await findByEmail("hod@cliffview.example"))!.accessRole).toBe("smt_admin");
+  });
+
+  test("super_admin cannot be imported", async () => {
+    // The role that grants operator access is minted only by an internal
+    // mutation. A spreadsheet must not be a way in.
+    const report = await importRows([row({ accessRole: "super_admin" })]);
+    expect(report).toMatchObject({ ready: 0, invalid: 1 });
+    expect(await findByEmail("nomsa@cliffview.example")).toBeNull();
+  });
+
+  test("an inactive phase is not accepted, since the form never offers one", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("phases", { name: "Retired Phase", order: 9, isActive: false });
+    });
+    const report = await importRows([row({ phase: "Retired Phase" })]);
+    expect(report.invalid).toBe(1);
+  });
+
+  test("the preview writes nothing", async () => {
+    const preview = await admin().query(api.staff.importPreview, { rows: [row()] });
+    expect(preview).toMatchObject({ ready: 1 });
+    expect(await findByEmail("nomsa@cliffview.example")).toBeNull();
+  });
+
+  test("the preview and the import agree", async () => {
+    const rows = [
+      row(),
+      row({ line: 3, email: "sam.staff@cliffview.example" }),
+      row({ line: 4, email: "bad", firstName: "" }),
+    ];
+    const preview = await admin().query(api.staff.importPreview, { rows });
+    const imported = await importRows(rows);
+
+    // One rule set, server-side, so what an admin approved is what happened.
+    expect(imported.rows).toEqual(preview.rows);
+  });
+
+  test("an oversized file is refused rather than truncated", async () => {
+    const rows = Array.from({ length: 501 }, (_, i) =>
+      row({ line: i + 2, email: `person${i}@cliffview.example` }),
+    );
+    await expect(importRows(rows)).rejects.toThrow(/TOO_MANY_ROWS|at most/i);
+  });
+});

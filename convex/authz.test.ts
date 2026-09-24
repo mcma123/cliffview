@@ -411,6 +411,66 @@ describe("requireAdmin on the school-wide assignment", () => {
   });
 });
 
+describe("requireAdmin on the staff import", () => {
+  const rows = [
+    {
+      line: 2,
+      honorific: "",
+      firstName: "Nomsa",
+      lastName: "Khumalo",
+      preferredName: "",
+      email: "nomsa@cliffview.example",
+      jobTitle: "Teacher",
+      accessRole: "staff",
+      phase: "Foundation Phase",
+    },
+  ];
+
+  test("importStaff: no identity is refused", async () => {
+    const t = newTest();
+    await seedFixture(t);
+    await expect(t.mutation(api.staff.importStaff, { rows })).rejects.toThrow(
+      /UNAUTHENTICATED|Sign in/i,
+    );
+  });
+
+  test("importStaff: a staff identity is refused", async () => {
+    const t = newTest();
+    const { staffId } = await seedFixture(t);
+    // A file of staff rows is a way to mint accounts. Nothing but an admin
+    // gets near it.
+    await expect(asUser(t, staffId).mutation(api.staff.importStaff, { rows })).rejects.toThrow(
+      /FORBIDDEN|Admin access/i,
+    );
+  });
+
+  test("importStaff: an inactive admin is refused", async () => {
+    const t = newTest();
+    const { inactiveAdminId } = await seedFixture(t);
+    await expect(
+      asUser(t, inactiveAdminId).mutation(api.staff.importStaff, { rows }),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+  });
+
+  test("importPreview: a staff identity is refused", async () => {
+    const t = newTest();
+    const { staffId } = await seedFixture(t);
+    // The preview reads whether an address is already on the system, which is
+    // a staff-directory fact, so it is gated exactly like the import.
+    await expect(asUser(t, staffId).query(api.staff.importPreview, { rows })).rejects.toThrow(
+      /FORBIDDEN|Admin access/i,
+    );
+  });
+
+  test("importPreview: no identity is refused", async () => {
+    const t = newTest();
+    await seedFixture(t);
+    await expect(t.query(api.staff.importPreview, { rows })).rejects.toThrow(
+      /UNAUTHENTICATED|Sign in/i,
+    );
+  });
+});
+
 describe("the seed refuses to wipe populated tables", () => {
   test("reset without iAmSure is refused once a module exists", async () => {
     const t = newTest();

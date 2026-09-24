@@ -14,6 +14,13 @@ import {
   publishedModules,
   recomputeCompliance,
 } from "./lib/enrollment";
+import {
+  MAX_IMPORT_ROWS,
+  type RowVerdict,
+  importRow,
+  rowVerdict,
+  validateImportRows,
+} from "./lib/staffImport";
 import { hasPasswordAccount } from "./invites";
 import { rekeyPasswordAccount } from "./lib/credentials";
 import { revokeLiveInvites } from "./lib/invites";
@@ -808,3 +815,115 @@ export const assignAllStep = internalMutation({
     return null;
   },
 });
+
+// ---------------------------------------------------------------------------
+// Bulk import
+// ---------------------------------------------------------------------------
+
+/** Shared by the preview and the import, so both report the same shape. */
+const importReport = {
+  ready: v.number(),
+  skipped: v.number(),
+  invalid: v.number(),
+  rows: v.array(rowVerdict),
+};
+
+/**
+ * Judge a parsed spreadsheet without writing anything.
+ *
+ * The preview table renders this, so what an admin approves is the server's own
+ * verdict rather than the browser's guess. The import then re-runs the same
+ * check — a query result is not a promise about a later mutation, and somebody
+ * could be created in between.
+ */
+export const importPreview = query({
+  args: { rows: v.array(importRow) },
+  returns: v.object(importReport),
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    if (args.rows.length > MAX_IMPORT_ROWS) {
+      throw new ConvexError({
+        code: "TOO_MANY_ROWS",
+        message: `That file has ${args.rows.length} rows. Import at most ${MAX_IMPORT_ROWS} at a time.`,
+      });
+    }
+    return summarise(await validateImportRows(ctx, args.rows));
+  },
+});
+
+/**
+ * Create every valid row, skip the ones already on the system.
+ *
+ * **No invitations are sent.** `staff.create` schedules `invites.deliver` for
+ * every `staff`-role profile it makes, with no opt-out, so reusing it would
+ * mail fifty people the moment a file was imported — including whoever is
+ * behind the typo in row 12. Profiles are created quietly and invited later,
+ * per person, through `invites.resend`, which already exists and is already
+ * audited. This is why the import inserts directly rather than calling
+ * `create`; the inserted shape is otherwise identical, including the four
+ * server-set constants that are earned rather than assigned.
+ *
+ * One transaction, no scheduler continuation. At the `MAX_IMPORT_ROWS` cap the
+ * work is one index probe and one insert per row, which fits comfortably —
+ * unlike `assignAllModules`, where the cross-product of staff and modules does
+ * not. So this import is atomic: a refusal leaves nothing half-created.
+ */
+export const importStaff = mutation({
+  args: { rows: v.array(importRow) },
+  returns: v.object(importReport),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    if (args.rows.length > MAX_IMPORT_ROWS) {
+      throw new ConvexError({
+        code: "TOO_MANY_ROWS",
+        message: `That file has ${args.rows.length} rows. Import at most ${MAX_IMPORT_ROWS} at a time.`,
+      });
+    }
+
+    // Re-judged rather than trusting what the preview returned: the rows arrive
+    // from a client, and the only thing standing between this and an arbitrary
+    // row of `users` is this call.
+    const verdicts = await validateImportRows(ctx, args.rows);
+
+    for (const verdict of verdicts) {
+      if (verdict.insert === null) continue;
+      await ctx.db.insert("users", {
+        ...verdict.insert,
+        employmentStatus: "active",
+        // Earned, never assigned — the same rule `create` follows. A new person
+        // has no enrollments, so zero is the true figure, not a placeholder.
+        cptdPoints: 0,
+        xpTotal: 0,
+        compliancePercent: 0,
+      });
+    }
+
+    const report = summarise(verdicts);
+    // One row for the import, not one per person: a 200-row file would
+    // otherwise bury every other entry in the audit log.
+    await recordAudit(ctx, {
+      actor,
+      action: "staff.importStaff",
+      entityTable: "users",
+      entityId: "import",
+      summary: `${report.ready} created, ${report.skipped} already present, ${report.invalid} rejected`,
+    });
+    return report;
+  },
+});
+
+/** Counts plus the per-row detail the screen lists. */
+function summarise(verdicts: RowVerdict[]) {
+  return {
+    ready: verdicts.filter((row) => row.outcome === "ready").length,
+    skipped: verdicts.filter((row) => row.outcome === "skipped").length,
+    invalid: verdicts.filter((row) => row.outcome === "invalid").length,
+    rows: verdicts.map(({ line, name, email, outcome, reason }) => ({
+      line,
+      name,
+      email,
+      outcome,
+      reason,
+    })),
+  };
+}

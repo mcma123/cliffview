@@ -24,6 +24,11 @@ Framework-adjacent utilities: class merging, server-only config, the SSR error-r
 - `lovable-error-reporting.ts` calls `window.__lovableEvents.captureException` when present and must stay a silent no-op when absent. It is called from the root `errorComponent`
 - `api/example.functions.ts` is the reference pattern for server logic: `createServerFn` + `.inputValidator(zod schema)` + `.handler`. Use this instead of introducing a separate API layer or edge functions. Module-level code in these files still ships to the client — server-only helpers belong in a `.server.ts` module
 
+- `staff-import.ts` is the app's **only import path**, the mirror of `csv.ts`'s only-export-path rule. It reads a roster out of a `.csv` or `.xlsx` and decides nothing about whether those rows may become people — that judgement is `convex/lib/staffImport.ts`, server-side, so the preview an admin approves and the import that runs cannot disagree. The CSV reader is hand-rolled RFC 4180 rather than a dependency; it strips the `﻿` BOM that `downloadCsv` itself writes, or a round-tripped template comes back with a first header of `﻿Email` and matches nothing
+- `.xlsx` needs `read-excel-file`, and two things about it differ from its own older documentation. It publishes **no `"."` export** — only `/browser`, `/node`, `/universal`, `/web-worker` — so the bare name fails to resolve at build time. And since v9 the **default export returns the list of sheets**; `readSheet` is what returns rows. It is imported dynamically so its unzipper and XML parser stay in a 63 KB lazy chunk instead of the bundle every admin loads to look at the staff list
+- It replaces the more obvious `xlsx` (SheetJS), whose npm package has been frozen at `0.18.5` since **March 2022** — SheetJS stopped publishing there
+- `readStaffFile` is the **first client-side file-content read in the codebase**; everything else hands an opaque `File` to R2 without looking inside it. Keep the impure edge there and the parsing pure, since `vitest.config.ts` runs `src/lib/**` under `edge-runtime` with no DOM
+
 ## Work Guidance
 
 - Put real server functions alongside `api/example.functions.ts` following its shape; keep the example file as documentation

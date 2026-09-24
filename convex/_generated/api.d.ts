@@ -25,6 +25,7 @@ import type * as lib_awards from "../lib/awards.js";
 import type * as lib_counts from "../lib/counts.js";
 import type * as lib_credentials from "../lib/credentials.js";
 import type * as lib_email from "../lib/email.js";
+import type * as lib_enrollment from "../lib/enrollment.js";
 import type * as lib_invitationEmail from "../lib/invitationEmail.js";
 import type * as lib_invites from "../lib/invites.js";
 import type * as lib_openrouter from "../lib/openrouter.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "lib/counts": typeof lib_counts;
   "lib/credentials": typeof lib_credentials;
   "lib/email": typeof lib_email;
+  "lib/enrollment": typeof lib_enrollment;
   "lib/invitationEmail": typeof lib_invitationEmail;
   "lib/invites": typeof lib_invites;
   "lib/openrouter": typeof lib_openrouter;
