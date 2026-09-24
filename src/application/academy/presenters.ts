@@ -1306,13 +1306,6 @@ export function presentComplianceReport(data: ComplianceReport, now: number) {
 
 type AiReviewQueue = FunctionReturnType<typeof api.aiReviewQueue.queue>;
 
-const REVIEW_STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  approved: "Approved",
-  rejected: "Rejected",
-  edited: "Edited",
-};
-
 const GENERATION_STATUS_LABELS: Record<string, string> = {
   pending: "Queued",
   running: "Running",
@@ -1334,70 +1327,73 @@ function confidenceTone(percent: number): string {
   return "bg-destructive/10 text-destructive";
 }
 
-function reviewStatusTone(status: string): string {
-  if (status === "approved") return "bg-success/15 text-success";
-  if (status === "rejected") return "bg-destructive/10 text-destructive";
-  if (status === "edited") return "bg-primary-soft text-primary";
-  return "bg-muted text-muted-foreground";
-}
-
+/**
+ * The review queue, which is now only the work still to do.
+ *
+ * `queue` returns pending drafts and nothing else, so the per-question status
+ * badge, its tone, and the dimmed "already decided" card are all gone. They
+ * described a screen that showed every question ever generated — the thing
+ * that made a fresh upload look like it had changed nothing.
+ *
+ * The four summary chips still count every decision ever made, because that
+ * history is worth seeing even once the drafts behind it are cleared. They
+ * come from the counters, which is why they survive a clean-up.
+ */
 export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
-  const counts = { pending: 0, approved: 0, rejected: 0, edited: 0 };
-  for (const row of data.questions) {
-    const status = row.question.status as keyof typeof counts;
-    if (status in counts) counts[status] += 1;
-  }
-
   return {
     configured: data.configured,
     summary: [
       {
         label: "pending",
-        value: counts.pending,
+        value: data.pendingCount,
         tone: "bg-gold-soft text-primary-deep",
         dot: "bg-gold",
       },
       {
         label: "approved",
-        value: counts.approved,
+        value: data.decisions.approved,
         tone: "bg-success/15 text-success",
         dot: "bg-success",
       },
       {
         label: "edited",
-        value: counts.edited,
+        value: data.decisions.edited,
         tone: "bg-primary-soft text-primary",
         dot: "bg-primary",
       },
       {
         label: "rejected",
-        value: counts.rejected,
+        value: data.decisions.rejected,
         tone: "bg-muted text-muted-foreground",
         dot: "bg-muted-foreground",
       },
     ],
-    questions: data.questions.map(({ question, options, moduleTitle, moduleSlug }) => ({
-      id: question._id,
-      prompt: question.prompt,
-      moduleTitle,
-      moduleSlug,
-      difficulty: question.difficulty,
-      confidencePercent: question.confidencePercent,
-      confidenceTone: confidenceTone(question.confidencePercent),
-      isPending: question.status === "pending",
-      statusLabel: REVIEW_STATUS_LABELS[question.status] ?? question.status,
-      statusTone: reviewStatusTone(question.status),
-      reviewedLabel:
-        question.reviewedAt === undefined
-          ? "Not yet reviewed"
-          : `Reviewed ${formatRelativeTime(question.reviewedAt, now)}`,
-      options: options.map((option) => ({
-        id: option._id,
-        key: option.key,
-        text: option.text,
-        isCorrect: option.isCorrect,
-      })),
-    })),
+    /** Decided drafts still stored — what the "Clear reviewed" button removes. */
+    reviewedCount: data.reviewedCount,
+    questions: data.questions.map(
+      ({ question, options, moduleTitle, moduleSlug, sourceFileName }) => ({
+        id: question._id,
+        prompt: question.prompt,
+        moduleTitle,
+        moduleSlug,
+        difficulty: question.difficulty,
+        confidencePercent: question.confidencePercent,
+        confidenceTone: confidenceTone(question.confidencePercent),
+        // Which upload this came from, and when. Without it every card looked
+        // alike and a reviewer could not tell this morning's PDF from last
+        // month's.
+        sourceLabel: `From ${sourceFileName ?? "an earlier upload"} · drafted ${formatRelativeTime(
+          question._creationTime,
+          now,
+        )}`,
+        options: options.map((option) => ({
+          id: option._id,
+          key: option.key,
+          text: option.text,
+          isCorrect: option.isCorrect,
+        })),
+      }),
+    ),
     sources: data.sources.map((source) => ({
       assetId: source.assetId,
       title: source.title,
@@ -1406,7 +1402,7 @@ export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
     // Passed through as-is: the uploader needs the id to write against and the
     // title to show, and there is nothing to derive from either.
     modules: data.modules.map((module) => ({ id: module.id, title: module.title })),
-    generations: data.generations.map((run) => ({
+    generations: data.generations.map(({ run, pendingCount }) => ({
       id: run._id,
       fileName: run.sourceFileName ?? "Untitled document",
       startedLabel: `${formatRelativeTime(run.startedAt, now)}${
@@ -1419,6 +1415,11 @@ export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
           : run.status === "failed"
             ? "bg-destructive/10 text-destructive"
             : "bg-gold-soft text-primary-deep",
+      pendingCount,
+      /** The filter's own label: the file, and how much of it is left to do. */
+      filterLabel: `${run.sourceFileName ?? "Untitled document"}${
+        pendingCount === 0 ? "" : ` (${pendingCount})`
+      }`,
       // Surfaced rather than swallowed: a failed run with no reason shown is
       // the thing the old simulated screen did, and it taught nobody anything.
       errorMessage: run.errorMessage ?? null,

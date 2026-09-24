@@ -1,12 +1,13 @@
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, Check, FileText, Loader2, Pencil, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Check, FileText, Loader2, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { presentAiReviewQueue } from "@/application/academy/presenters";
 import { AdminShell } from "@/components/admin-shell";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { DragAndDropZone, type UploadZoneStatus } from "@/components/drag-and-drop-zone";
 import { useAssetUploads } from "@/hooks/use-asset-upload";
@@ -56,7 +57,22 @@ export const Route = createFileRoute("/academy/admin/ai-review")({
 function AIReview() {
   const viewer = useAdminViewer();
   const { now } = Route.useLoaderData();
-  const { data: queue } = useSuspenseQuery(convexQuery(api.aiReviewQueue.queue, {}));
+  /**
+   * Which generation run to show, or every one.
+   *
+   * Held above the query because it is an argument to it: the server filters,
+   * rather than the screen hiding rows it fetched. `onGenerate` sets this to
+   * the run it just started, so after drafting you are looking at exactly what
+   * was drafted and nothing else.
+   */
+  const [runFilter, setRunFilter] = useState<string>("");
+
+  const { data: queue } = useSuspenseQuery(
+    convexQuery(
+      api.aiReviewQueue.queue,
+      runFilter === "" ? {} : { generationId: runFilter as Id<"aiGenerations"> },
+    ),
+  );
   const data = presentAiReviewQueue(queue, now);
 
   const [tab, setTab] = useState<"queue" | "generate">("queue");
@@ -73,6 +89,12 @@ function AIReview() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const decide = useMutation({ mutationFn: useConvexMutation(api.aiReviewQueue.setDecision) });
+  const discard = useMutation({
+    mutationFn: useConvexMutation(api.aiReviewQueue.discardQuestion),
+  });
+  const clearReviewed = useMutation({
+    mutationFn: useConvexMutation(api.aiReviewQueue.clearReviewed),
+  });
   const generate = useMutation({ mutationFn: useConvexAction(api.aiReview.generateFromAsset) });
   const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
   const removeAsset = useMutation({ mutationFn: useConvexMutation(api.assets.remove) });
@@ -189,6 +211,10 @@ function AIReview() {
           ? `${result.questionCount} questions drafted for review.`
           : `${result.questionCount} drafted — ${result.discarded} discarded as ungradable.`,
       );
+      // The id was already being returned and thrown away. Selecting it is the
+      // difference between "the queue looks the same as before" and seeing the
+      // eight questions this upload just produced.
+      setRunFilter(result.generationId);
       setTab("queue");
     } catch (caught) {
       toast.error(errorMessage(caught, "Generation failed."));
@@ -241,7 +267,7 @@ function AIReview() {
 
         {tab === "queue" ? (
           <>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {data.summary.map((chip) => (
                 <span
                   key={chip.label}
@@ -254,24 +280,77 @@ function AIReview() {
                   {chip.value} {chip.label}
                 </span>
               ))}
+
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                {data.generations.length === 0 ? null : (
+                  <select
+                    value={runFilter}
+                    onChange={(e) => setRunFilter(e.target.value)}
+                    aria-label="Show questions from"
+                    className="rounded-2xl border border-input bg-background px-3 py-2 text-xs font-semibold outline-none focus:border-primary"
+                  >
+                    <option value="">All uploads</option>
+                    {data.generations.map((run) => (
+                      <option key={run.id} value={run.id}>
+                        {run.filterLabel}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {data.reviewedCount === 0 ? null : (
+                  <ConfirmDialog
+                    icon={Trash2}
+                    title="Clear the drafts you have already reviewed"
+                    description={`Removes ${data.reviewedCount} draft${
+                      data.reviewedCount === 1 ? "" : "s"
+                    } you have approved, edited or rejected.`}
+                    confirmLabel="Clear reviewed"
+                    body={
+                      <p className="text-sm text-muted-foreground">
+                        Questions you approved stay on their modules — they are real assessment
+                        questions now, and a teacher may already have answered one. This only clears
+                        the drafts behind them, which cannot be undone.
+                      </p>
+                    }
+                    onConfirm={async () => {
+                      const { removed } = await clearReviewed.mutateAsync({});
+                      toast.success(
+                        `${removed} reviewed draft${removed === 1 ? "" : "s"} cleared.`,
+                      );
+                    }}
+                  >
+                    <button className="inline-flex items-center gap-2 rounded-2xl border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted">
+                      <Trash2 className="h-3.5 w-3.5" /> Clear reviewed ({data.reviewedCount})
+                    </button>
+                  </ConfirmDialog>
+                )}
+              </div>
             </div>
 
             {data.questions.length === 0 ? (
               <section className="rounded-3xl border border-dashed border-border bg-card p-10 text-center">
                 <h2 className="text-lg font-bold text-foreground">Nothing to review</h2>
                 <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                  Generate questions from a module document and they will appear here as drafts.
+                  {runFilter === ""
+                    ? "Generate questions from a module document and they will appear here as drafts."
+                    : "Every question from that upload has been dealt with."}
                 </p>
+                {runFilter === "" ? null : (
+                  <button
+                    onClick={() => setRunFilter("")}
+                    className="mt-4 rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                  >
+                    Show all uploads
+                  </button>
+                )}
               </section>
             ) : (
               <div className="space-y-4">
                 {data.questions.map((question) => (
                   <article
                     key={question.id}
-                    className={cn(
-                      "rounded-2xl border bg-card p-6 shadow-sm transition-opacity",
-                      question.isPending ? "border-border" : "border-border opacity-70",
-                    )}
+                    className="rounded-2xl border border-border bg-card p-6 shadow-sm"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -293,16 +372,6 @@ function AIReview() {
                         >
                           Confidence {question.confidencePercent}%
                         </span>
-                        {question.isPending ? null : (
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                              question.statusTone,
-                            )}
-                          >
-                            {question.statusLabel}
-                          </span>
-                        )}
                       </div>
                     </div>
 
@@ -337,7 +406,7 @@ function AIReview() {
                     </ul>
 
                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                      <p className="text-xs text-muted-foreground">{question.reviewedLabel}</p>
+                      <p className="text-xs text-muted-foreground">{question.sourceLabel}</p>
                       <div className="flex flex-wrap items-center gap-2">
                         {editing?.id === question.id ? (
                           <>
@@ -350,14 +419,17 @@ function AIReview() {
                             <button
                               disabled={decide.isPending || editing.prompt.trim().length === 0}
                               onClick={() =>
-                                void run("Edited and approved.", async () => {
-                                  await decide.mutateAsync({
-                                    questionId: question.id as Id<"aiQuestions">,
-                                    decision: "edited",
-                                    editedPrompt: editing.prompt,
-                                  });
-                                  setEditing(null);
-                                })
+                                void run(
+                                  `Edited and added to ${question.moduleTitle}.`,
+                                  async () => {
+                                    await decide.mutateAsync({
+                                      questionId: question.id as Id<"aiQuestions">,
+                                      decision: "edited",
+                                      editedPrompt: editing.prompt,
+                                    });
+                                    setEditing(null);
+                                  },
+                                )
                               }
                               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
                             >
@@ -366,6 +438,29 @@ function AIReview() {
                           </>
                         ) : (
                           <>
+                            <ConfirmDialog
+                              icon={Trash2}
+                              title="Discard this draft"
+                              description="It is deleted outright, not recorded as rejected."
+                              confirmLabel="Discard"
+                              body={
+                                <p className="text-sm text-muted-foreground">
+                                  Use Reject instead if the question was wrong and you want that
+                                  judgement kept. Discard is for a draft not worth judging — a run
+                                  that came back as nonsense. It cannot be undone.
+                                </p>
+                              }
+                              onConfirm={async () => {
+                                await discard.mutateAsync({
+                                  questionId: question.id as Id<"aiQuestions">,
+                                });
+                                toast.success("Draft discarded.");
+                              }}
+                            >
+                              <button className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-destructive">
+                                <Trash2 className="h-4 w-4" /> Discard
+                              </button>
+                            </ConfirmDialog>
                             <button
                               onClick={() =>
                                 setEditing({ id: question.id, prompt: question.prompt })
@@ -391,7 +486,7 @@ function AIReview() {
                             <button
                               disabled={decide.isPending}
                               onClick={() =>
-                                void run("Approved and added to the module.", () =>
+                                void run(`Approved — added to ${question.moduleTitle}.`, () =>
                                   decide.mutateAsync({
                                     questionId: question.id as Id<"aiQuestions">,
                                     decision: "approved",

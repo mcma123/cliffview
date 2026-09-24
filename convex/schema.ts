@@ -458,6 +458,16 @@ export default defineSchema({
     status: reviewStatus,
     reviewedBy: v.optional(v.string()),
     reviewedAt: v.optional(v.number()),
+    /**
+     * The assessment question an approval produced.
+     *
+     * Optional because a rejected draft produces none, and because every row
+     * written before this field existed has none. Without it there is no way
+     * to find what a draft became — which is how an approval could be
+     * reversed on the draft while the real question stayed on the module with
+     * nothing pointing at it.
+     */
+    assessmentQuestionId: v.optional(v.id("assessmentQuestions")),
   })
     .index("by_status", ["status"])
     .index("by_moduleId_and_status", ["moduleId", "status"])

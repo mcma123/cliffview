@@ -70,6 +70,14 @@ const pendingQuestion = async () => {
   return view.questions[0];
 };
 
+/** One named pending card. The queue is newest-first, so position is not a name. */
+const pendingNamed = async (prompt: string) => {
+  const view = await admin().query(api.aiReviewQueue.queue, {});
+  const row = view.questions.find((entry) => entry.question.prompt === prompt);
+  if (row === undefined) throw new Error(`No pending question: ${prompt}`);
+  return row;
+};
+
 const assessmentRows = async () =>
   await t.run(async (ctx) => ({
     questions: await ctx.db.query("assessmentQuestions").take(50),
@@ -171,6 +179,31 @@ describe("the queue is the school's, not a teacher's", () => {
         decision: "approved",
       }),
     ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+  });
+
+  test("discarding a draft is admin-only", async () => {
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await expect(
+      asUser(staffId).mutation(api.aiReviewQueue.discardQuestion, {
+        questionId: row.question._id,
+      }),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+    await expect(
+      t.mutation(api.aiReviewQueue.discardQuestion, { questionId: row.question._id }),
+    ).rejects.toThrow(/UNAUTHENTICATED|Sign in/i);
+  });
+
+  test("clearing the reviewed drafts is admin-only", async () => {
+    await expect(asUser(staffId).mutation(api.aiReviewQueue.clearReviewed, {})).rejects.toThrow(
+      /FORBIDDEN|Admin access/i,
+    );
+    await expect(
+      asUser(inactiveAdminId).mutation(api.aiReviewQueue.clearReviewed, {}),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+    await expect(t.mutation(api.aiReviewQueue.clearReviewed, {})).rejects.toThrow(
+      /UNAUTHENTICATED|Sign in/i,
+    );
   });
 
   test("generating is gated at the internal query the action calls first", async () => {
@@ -357,7 +390,7 @@ describe("approving is the only path to a learner", () => {
     expect(after?.prompt).toBe("Rewritten by a human.");
   });
 
-  test("every decision is recorded, append-only", async () => {
+  test("the decision is recorded with the reviewer's note", async () => {
     await record([GOOD]);
     const row = await pendingQuestion();
     await admin().mutation(api.aiReviewQueue.setDecision, {
@@ -365,14 +398,9 @@ describe("approving is the only path to a learner", () => {
       decision: "rejected",
       note: "Not in the policy.",
     });
-    // A change of mind adds a row rather than replacing one.
-    await admin().mutation(api.aiReviewQueue.setDecision, {
-      questionId: row.question._id,
-      decision: "approved",
-    });
 
     const decisions = await t.run(async (ctx) => await ctx.db.query("aiReviewDecisions").take(10));
-    expect(decisions.map((d) => d.decision)).toEqual(["rejected", "approved"]);
+    expect(decisions.map((d) => d.decision)).toEqual(["rejected"]);
     expect(decisions[0].note).toBe("Not in the policy.");
   });
 
@@ -423,5 +451,235 @@ describe("approving is the only path to a learner", () => {
     const value = (name: string) => counters.find((c) => c.name === name)?.value;
     expect(value("ai_questions_pending")).toBe(0);
     expect(value("ai_questions_approved")).toBe(1);
+  });
+});
+
+describe("the queue is the work left, not the history", () => {
+  /** A second run, so "filter by source" has two things to tell apart. */
+  const secondRun = async (sourceFileName: string) =>
+    await t.run(
+      async (ctx) =>
+        await ctx.db.insert("aiGenerations", {
+          status: "complete" as const,
+          moduleId,
+          sourceFileName,
+          startedAt: Date.now() + 1,
+          completedAt: Date.now() + 2,
+          questionCount: 0,
+        }),
+    );
+
+  const prompts = async (runId?: Id<"aiGenerations">) => {
+    const view = await admin().query(
+      api.aiReviewQueue.queue,
+      runId === undefined ? {} : { generationId: runId },
+    );
+    return view.questions.map((row) => row.question.prompt);
+  };
+
+  test("a decided question leaves the list", async () => {
+    // The reported bug: the screen showed every question ever generated,
+    // because `queue` read `by_status` with no equality bound at all.
+    await record([GOOD, { ...GOOD, prompt: "Second question?" }]);
+    const row = await pendingNamed(GOOD.prompt);
+    await admin().mutation(api.aiReviewQueue.setDecision, {
+      questionId: row.question._id,
+      decision: "approved",
+    });
+
+    expect(await prompts()).toEqual(["Second question?"]);
+  });
+
+  test("a queue full of decided drafts cannot crowd out a new one", async () => {
+    // The `.take(MAX_QUEUE)` truncates before any sort can run, so an
+    // unfiltered read would eventually stop reaching pending rows entirely.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 220; i++) {
+        await ctx.db.insert("aiQuestions", {
+          moduleId,
+          generationId,
+          prompt: `Old question ${i}`,
+          difficulty: "Easy" as const,
+          confidencePercent: 50,
+          status: "approved" as const,
+        });
+      }
+    });
+    await record([GOOD]);
+
+    expect(await prompts()).toEqual([GOOD.prompt]);
+  });
+
+  test("filtering by run shows that upload's drafts and no other's", async () => {
+    await record([GOOD]);
+    const other = await secondRun("Communication-Mastery-Notes.pdf");
+    await t.mutation(internal.aiReviewQueue.recordQuestions, {
+      generationId: other,
+      moduleId,
+      questions: [{ ...GOOD, prompt: "From the newer PDF?" }],
+    });
+
+    expect(await prompts(other)).toEqual(["From the newer PDF?"]);
+    expect(await prompts(generationId)).toEqual([GOOD.prompt]);
+    // Unfiltered still shows both, newest first.
+    expect(await prompts()).toEqual(["From the newer PDF?", GOOD.prompt]);
+  });
+
+  test("each card names the document it came from", async () => {
+    const other = await secondRun("Communication-Mastery-Notes.pdf");
+    await t.mutation(internal.aiReviewQueue.recordQuestions, {
+      generationId: other,
+      moduleId,
+      questions: [GOOD],
+    });
+
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.questions[0].sourceFileName).toBe("Communication-Mastery-Notes.pdf");
+  });
+
+  test("the filter counts only what is still pending in each run", async () => {
+    await record([GOOD, { ...GOOD, prompt: "Second question?" }]);
+    const row = await pendingQuestion();
+    await admin().mutation(api.aiReviewQueue.setDecision, {
+      questionId: row.question._id,
+      decision: "rejected",
+    });
+
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    const run = view.generations.find((entry) => entry.run._id === generationId);
+    expect(run?.pendingCount).toBe(1);
+    expect(view.pendingCount).toBe(1);
+    expect(view.reviewedCount).toBe(1);
+    expect(view.decisions.rejected).toBe(1);
+  });
+});
+
+describe("a draft is decided once", () => {
+  const approve = async (questionId: Id<"aiQuestions">) =>
+    await admin().mutation(api.aiReviewQueue.setDecision, { questionId, decision: "approved" });
+
+  test("approving twice is refused, and the bank keeps one copy", async () => {
+    // The fault that put five identical questions in front of a teacher on
+    // production: nothing checked the draft's status, so every re-approval
+    // inserted the question again.
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await approve(row.question._id);
+
+    await expect(approve(row.question._id)).rejects.toThrow(/already approved/i);
+    expect((await assessmentRows()).questions).toHaveLength(1);
+  });
+
+  test("rejecting an approved question is refused too", async () => {
+    // Worse than a duplicate: it used to flip the draft to rejected and leave
+    // the real question on the module, with nothing pointing at it.
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await approve(row.question._id);
+
+    await expect(
+      admin().mutation(api.aiReviewQueue.setDecision, {
+        questionId: row.question._id,
+        decision: "rejected",
+      }),
+    ).rejects.toThrow(/already approved/i);
+
+    const after = await t.run(async (ctx) => await ctx.db.get("aiQuestions", row.question._id));
+    expect(after?.status).toBe("approved");
+    expect((await assessmentRows()).questions).toHaveLength(1);
+  });
+
+  test("an approval remembers the question it created", async () => {
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    const { assessmentQuestionId } = await approve(row.question._id);
+
+    const after = await t.run(async (ctx) => await ctx.db.get("aiQuestions", row.question._id));
+    expect(after?.assessmentQuestionId).toBe(assessmentQuestionId);
+  });
+
+  test("a rejection leaves no assessment question to point at", async () => {
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await admin().mutation(api.aiReviewQueue.setDecision, {
+      questionId: row.question._id,
+      decision: "rejected",
+    });
+
+    const after = await t.run(async (ctx) => await ctx.db.get("aiQuestions", row.question._id));
+    expect(after?.assessmentQuestionId).toBeUndefined();
+  });
+});
+
+describe("clearing drafts out", () => {
+  const counter = async (name: string) =>
+    await t.run(
+      async (ctx) => (await ctx.db.query("counters").take(10)).find((c) => c.name === name)?.value,
+    );
+
+  test("discarding removes the draft and its options", async () => {
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await admin().mutation(api.aiReviewQueue.discardQuestion, { questionId: row.question._id });
+
+    const left = await t.run(async (ctx) => ({
+      questions: await ctx.db.query("aiQuestions").take(10),
+      options: await ctx.db.query("aiQuestionOptions").take(10),
+    }));
+    expect(left.questions).toHaveLength(0);
+    expect(left.options).toHaveLength(0);
+  });
+
+  test("discarding a pending draft takes it off the pending count", async () => {
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    expect(await counter("ai_questions_pending")).toBe(1);
+
+    await admin().mutation(api.aiReviewQueue.discardQuestion, { questionId: row.question._id });
+    expect(await counter("ai_questions_pending")).toBe(0);
+  });
+
+  test("discarding a decided draft does not un-count the decision", async () => {
+    // The pending counter is a row count. The approved counter is a tally of
+    // judgements made, and tidying the paperwork does not un-make one.
+    await record([GOOD]);
+    const row = await pendingQuestion();
+    await admin().mutation(api.aiReviewQueue.setDecision, {
+      questionId: row.question._id,
+      decision: "approved",
+    });
+
+    await admin().mutation(api.aiReviewQueue.discardQuestion, { questionId: row.question._id });
+    expect(await counter("ai_questions_pending")).toBe(0);
+    expect(await counter("ai_questions_approved")).toBe(1);
+  });
+
+  test("clearing reviewed keeps the pending work and the approved questions", async () => {
+    await record([GOOD, { ...GOOD, prompt: "Second question?" }]);
+    const row = await pendingNamed(GOOD.prompt);
+    await admin().mutation(api.aiReviewQueue.setDecision, {
+      questionId: row.question._id,
+      decision: "approved",
+    });
+
+    const { removed } = await admin().mutation(api.aiReviewQueue.clearReviewed, {});
+    expect(removed).toBe(1);
+
+    const view = await admin().query(api.aiReviewQueue.queue, {});
+    expect(view.questions.map((q) => q.question.prompt)).toEqual(["Second question?"]);
+    // Nothing left to clear, but the approval still counts as having happened.
+    expect(view.reviewedCount).toBe(0);
+    expect(view.decisions.approved).toBe(1);
+
+    // The point of the whole feature: the teacher's question survives the
+    // clean-up of the draft that produced it.
+    expect((await assessmentRows()).questions).toHaveLength(1);
+  });
+
+  test("clearing reviewed with nothing decided removes nothing", async () => {
+    await record([GOOD]);
+    const { removed } = await admin().mutation(api.aiReviewQueue.clearReviewed, {});
+    expect(removed).toBe(0);
+    expect(await counter("ai_questions_pending")).toBe(1);
   });
 });
