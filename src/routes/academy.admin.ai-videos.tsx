@@ -298,12 +298,20 @@ function AIVideos() {
               </select>
             </label>
 
+            {moduleId === "" ? (
+              <p className="mt-4 flex items-start gap-2 rounded-2xl border border-gold/40 bg-gold-soft/40 px-4 py-3 text-sm text-foreground">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-primary-deep" />
+                Choose a module above first. A document is saved onto a module, so there is nowhere
+                to put this one yet.
+              </p>
+            ) : null}
+
             <div className="mt-4">
               <DragAndDropZone
                 title="Upload a PDF"
                 description={
                   moduleId === ""
-                    ? "Choose a module first, then drop a PDF here."
+                    ? "Choose a module above first, then drop a PDF here."
                     : "Drag and drop a PDF here, or click to browse"
                 }
                 icon={FileText}
@@ -313,7 +321,6 @@ function AIVideos() {
                 progress={uploadState?.progress ?? 0}
                 errorMessage={createError ?? uploadState?.errorMessage ?? null}
                 uploadedFileName={uploadedFileName}
-                disabled={moduleId === ""}
               />
             </div>
           </div>

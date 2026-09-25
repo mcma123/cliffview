@@ -611,3 +611,29 @@ describe("recovering a job nobody came back for", () => {
     expect((await jobRow(jobId))?.status).toBe("generating");
   });
 });
+
+describe("the upload path the screen depends on", () => {
+  test("a freshly uploaded document reaches the picker", async () => {
+    // The screen uploads by creating a placeholder asset and attaching a file
+    // to it, then expects that document to appear in `jobs.modules[].documents`
+    // so it can be generated from. If that link ever breaks, an admin uploads
+    // a PDF successfully and still cannot select it.
+    const created = await admin().mutation(api.assets.create, {
+      moduleId,
+      title: "Newly uploaded policy",
+      kind: "document",
+      description: "Uploaded on the AI videos screen to generate a video from.",
+    });
+    await admin().mutation(api.assets.attachFile, {
+      assetId: created,
+      key: "freshly-uploaded-key",
+      fileName: "new.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 1234,
+    });
+
+    const view = await admin().query(api.aiVideoQueue.jobs, { now: Date.now() });
+    const mod = view.modules.find((entry) => entry.id === moduleId);
+    expect(mod?.documents.some((document) => document.id === created)).toBe(true);
+  });
+});

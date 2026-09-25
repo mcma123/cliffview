@@ -572,7 +572,6 @@ function AIReview() {
                       errorMessage={createError ?? uploadState?.errorMessage ?? null}
                       uploadedFileName={uploadedFileName}
                       onRemove={uploadedAssetId === null ? undefined : onRemoveUpload}
-                      disabled={uploadModuleId === ""}
                     />
                   </div>
                 </div>

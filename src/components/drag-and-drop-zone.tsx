@@ -66,6 +66,19 @@ export function DragAndDropZone({
   // screens render it that way deliberately.
   const inert = disabled || busy || onUpload === undefined;
 
+  /**
+   * Whether to *look* unavailable.
+   *
+   * Only for an explicit `disabled`. Busy has its own spinner, and a
+   * handler-less zone is a status card that is supposed to look normal.
+   *
+   * This exists because a disabled zone used to render exactly like a working
+   * one — same border, same background, no cursor change — while swallowing
+   * every click in silence. Somebody clicking it concluded, correctly, that
+   * uploading was broken.
+   */
+  const looksUnavailable = disabled && !busy;
+
   const accept = useCallback(
     (files: FileList | null | undefined) => {
       if (files === null || files === undefined || inert) return;
@@ -125,9 +138,11 @@ export function DragAndDropZone({
         ? "border-primary bg-primary/5 shadow-inner"
         : uploadedFileName !== null
           ? "border-success/50 bg-success/5"
-          : inert
-            ? "border-border bg-background"
-            : "border-border bg-background hover:border-primary/50 hover:bg-muted/50";
+          : looksUnavailable
+            ? "border-border bg-muted/40 opacity-60"
+            : inert
+              ? "border-border bg-background"
+              : "border-border bg-background hover:border-primary/50 hover:bg-muted/50";
 
   return (
     <div
