@@ -508,6 +508,8 @@ export default defineSchema({
 
     startedAt: v.number(),
     submittedAt: v.optional(v.number()),
+    /** When the video finished rendering and started waiting to be watched. */
+    readyAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
 
     /**
@@ -517,7 +519,9 @@ export default defineSchema({
      */
     pendingR2Key: v.optional(v.string()),
     assetId: v.optional(v.id("assets")),
+    /** The generated video, from the moment it is stored until it is discarded. */
     r2Key: v.optional(v.string()),
+    sizeBytes: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
   })
     /** Work that is due: status "generating" with nextPollAt in the past. */

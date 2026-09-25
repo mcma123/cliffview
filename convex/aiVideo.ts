@@ -280,11 +280,15 @@ export const poll = internalAction({
 });
 
 /**
- * Download the finished video, put it in the bucket, and attach it.
+ * Download the finished video and put it in the bucket.
+ *
+ * Stops there. Publishing it to a lesson is a person's decision, made on the
+ * AI Videos screen after watching it — the poller's job ends at "the file
+ * exists and somebody should look at it".
  *
  * Split out to keep the branching in `poll` readable. The ordering is the
  * careful part: the key is recorded in the database the moment it exists, so a
- * crash between storing and attaching still leaves the orphan findable.
+ * crash immediately after storing still leaves the orphan findable.
  */
 async function storeAndAttach(
   ctx: ActionCtx,
@@ -335,20 +339,20 @@ async function storeAndAttach(
     return null;
   }
 
-  // Recorded before the attach is attempted, so a failure after this point
-  // leaves a key the watchdog and the sweep know how to clean up.
+  // Recorded before the job is advanced, so a failure after this point leaves
+  // a key the watchdog and the sweep know how to clean up.
   await ctx.runMutation(internal.aiVideoQueue.markStored, { jobId: id, r2Key: key });
 
-  const { attached } = await ctx.runMutation(internal.aiVideoQueue.attachResult, {
+  const { recorded } = await ctx.runMutation(internal.aiVideoQueue.recordVideo, {
     jobId: id,
     r2Key: key,
     sizeBytes: bytes.byteLength,
   });
 
-  if (!attached) {
-    // Another poll won the race, or the lesson is gone. Either way this copy
-    // belongs to nobody — honouring the return value is what stops idempotency
-    // from leaking a blob.
+  if (!recorded) {
+    // Another poll won the race, or the job was cancelled while this one was
+    // downloading. Either way this copy belongs to nobody — honouring the
+    // return value is what stops idempotency from leaking a blob.
     await r2.deleteObject(ctx, key);
   }
   return null;

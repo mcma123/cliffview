@@ -1486,6 +1486,7 @@ const VIDEO_STATUS_LABELS: Record<string, string> = {
   drafting: "Reading the document",
   draft_ready: "Prompt ready",
   generating: "Generating",
+  ready: "Watch and publish",
   complete: "On the lesson",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -1496,6 +1497,7 @@ function videoStatusTone(status: string): string {
   if (status === "failed") return "bg-destructive/10 text-destructive";
   if (status === "cancelled") return "bg-muted text-muted-foreground";
   if (status === "generating") return "bg-primary-soft text-primary";
+  if (status === "ready") return "bg-gold-soft text-primary-deep";
   return "bg-gold-soft text-primary-deep";
 }
 
@@ -1510,7 +1512,7 @@ export function presentAiVideoJobs(data: AiVideoJobs, now: number) {
   return {
     configured: data.configured,
     modules: data.modules,
-    jobs: data.jobs.map(({ job, moduleTitle, lessonTitle, stalled }) => ({
+    jobs: data.jobs.map(({ job, moduleTitle, lessonTitle, videoUrl, stalled }) => ({
       id: job._id,
       title: job.title,
       moduleTitle,
@@ -1531,6 +1533,13 @@ export function presentAiVideoJobs(data: AiVideoJobs, now: number) {
       errorMessage: job.errorMessage ?? null,
       /** True once the video is on the lesson, so the card can say where it went. */
       delivered: job.assetId !== undefined,
+      /**
+       * A playable URL once the video exists, whether it has been published or
+       * not — an admin should be able to re-watch what they approved.
+       */
+      videoUrl,
+      /** Rendered and waiting on a person: show the player and the two buttons. */
+      awaitingReview: job.status === "ready",
     })),
   };
 }

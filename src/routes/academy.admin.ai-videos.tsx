@@ -1,7 +1,16 @@
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Clapperboard, FileText, Loader2, Sparkles, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Clapperboard,
+  FileText,
+  Loader2,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -86,6 +95,9 @@ function AIVideos() {
   const draft = useMutation({ mutationFn: useConvexAction(api.aiVideo.draftPrompt) });
   const generate = useMutation({ mutationFn: useConvexAction(api.aiVideo.startGeneration) });
   const cancel = useMutation({ mutationFn: useConvexMutation(api.aiVideoQueue.cancel) });
+  const publish = useMutation({
+    mutationFn: useConvexMutation(api.aiVideoQueue.publishToLesson),
+  });
   const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
 
   const uploads = useAssetUploads();
@@ -196,7 +208,9 @@ function AIVideos() {
         resolution,
         aspectRatio,
       });
-      toast.success(`Generating. It will appear on ${lessonTitle} when it is done.`);
+      // Deliberately not "it will appear on the lesson": it appears here
+      // first, and a person decides whether it goes any further.
+      toast.success(`Generating. Watch it here before it goes on ${lessonTitle}.`);
       setJobId(null);
       setPrompt("");
     } catch (caught) {
@@ -461,47 +475,113 @@ function AIVideos() {
           ) : (
             <div className="mt-4 space-y-2">
               {data.jobs.map((job) => (
-                <div
-                  key={job.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{job.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {job.moduleTitle} · {job.lessonTitle}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{job.sourceLabel}</p>
-                    {job.errorMessage === null ? null : (
-                      <p className="mt-1 max-w-xl text-xs text-destructive">{job.errorMessage}</p>
-                    )}
+                <div key={job.id} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{job.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {job.moduleTitle} · {job.lessonTitle}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{job.sourceLabel}</p>
+                      {job.errorMessage === null ? null : (
+                        <p className="mt-1 max-w-xl text-xs text-destructive">{job.errorMessage}</p>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                          job.statusTone,
+                        )}
+                      >
+                        {job.statusLabel}
+                      </span>
+                      {job.isRunning ? (
+                        <button
+                          onClick={() =>
+                            void cancel
+                              .mutateAsync({ jobId: job.id as Id<"aiVideoJobs"> })
+                              .then(() => toast.success("Stopped."))
+                              .catch((caught: unknown) =>
+                                toast.error(errorMessage(caught, "Could not stop that job.")),
+                              )
+                          }
+                          className="rounded-xl border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                          aria-label={`Stop ${job.title}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                        job.statusTone,
-                      )}
-                    >
-                      {job.statusLabel}
-                    </span>
-                    {job.isRunning ? (
-                      <button
-                        onClick={() =>
-                          void cancel
-                            .mutateAsync({ jobId: job.id as Id<"aiVideoJobs"> })
-                            .then(() => toast.success("Stopped."))
-                            .catch((caught: unknown) =>
-                              toast.error(errorMessage(caught, "Could not stop that job.")),
-                            )
-                        }
-                        className="rounded-xl border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"
-                        aria-label={`Stop ${job.title}`}
+                  {job.videoUrl === null ? null : (
+                    <div className="mt-3">
+                      {/*
+                        Keyed by job id so moving between two finished videos
+                        tears the element down rather than swapping `src` under
+                        one that is already playing.
+                      */}
+                      <video
+                        key={job.id}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="aspect-video w-full rounded-xl bg-black"
+                        src={job.videoUrl}
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
+                        Your browser cannot play this video.
+                      </video>
+
+                      {job.awaitingReview ? (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-xs text-muted-foreground">
+                            Nobody sees this until you publish it.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() =>
+                                void cancel
+                                  .mutateAsync({ jobId: job.id as Id<"aiVideoJobs"> })
+                                  .then(() => toast.success("Discarded."))
+                                  .catch((caught: unknown) =>
+                                    toast.error(
+                                      errorMessage(caught, "Could not discard that video."),
+                                    ),
+                                  )
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" /> Discard
+                            </button>
+                            <button
+                              disabled={publish.isPending}
+                              onClick={() =>
+                                void publish
+                                  .mutateAsync({ jobId: job.id as Id<"aiVideoJobs"> })
+                                  .then(({ lessonTitle }) =>
+                                    toast.success(`Published to ${lessonTitle}.`),
+                                  )
+                                  .catch((caught: unknown) =>
+                                    toast.error(
+                                      errorMessage(caught, "Could not publish that video."),
+                                    ),
+                                  )
+                              }
+                              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
+                            >
+                              <Check className="h-4 w-4" /> Publish to this lesson
+                            </button>
+                          </div>
+                        </div>
+                      ) : job.delivered ? (
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          Published to {job.lessonTitle}.
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

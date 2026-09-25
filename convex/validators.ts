@@ -130,15 +130,25 @@ export type GenerationStatus = Infer<typeof generationStatus>;
 /**
  * The life of one AI video job.
  *
- * Separate from `generationStatus` because a video has a step a question run
- * does not: the prompt is drafted, read by a person, and only then submitted.
- * `draft_ready` is that pause, and it is the whole reason the feature is two
- * actions rather than one.
+ * Separate from `generationStatus` because a video has two steps a question run
+ * does not, both of them pauses for a person: `draft_ready` is the prompt
+ * waiting to be read before anything is rendered, and `ready` is the finished
+ * video waiting to be watched before it reaches a lesson.
  */
 export const videoJobStatus = v.union(
   v.literal("drafting"),
   v.literal("draft_ready"),
   v.literal("generating"),
+  /**
+   * Rendered, stored, and waiting for a person to watch it.
+   *
+   * The second pause in this pipeline, and the same rule the question queue
+   * follows: a generated thing is a draft, and approving it is the only way it
+   * reaches a teacher. A model that returns fifteen seconds of something
+   * unusable should not put it on a lesson by itself.
+   */
+  v.literal("ready"),
+  /** Published: the video is on its lesson. */
   v.literal("complete"),
   v.literal("failed"),
   v.literal("cancelled"),

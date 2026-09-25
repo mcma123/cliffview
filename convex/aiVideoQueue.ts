@@ -19,7 +19,7 @@ import {
   nextPollDelayMs,
 } from "./lib/openrouterVideo";
 import { MAX_SIBLINGS } from "./lib/ordering";
-import { deleteBlobIfPresent } from "./lib/storage";
+import { DOWNLOAD_URL_TTL_SECONDS, deleteBlobIfPresent, r2 } from "./lib/storage";
 import schema from "./schema";
 
 /**
@@ -132,6 +132,14 @@ export const jobs = query({
         job: schema.doc("aiVideoJobs"),
         moduleTitle: v.string(),
         lessonTitle: v.string(),
+        /**
+         * A signed URL for the generated video, so the admin can watch it
+         * before deciding. Null until one exists.
+         *
+         * Minted per read and never written to a row: it is an expiring
+         * credential to our own bucket, not an address.
+         */
+        videoUrl: v.union(v.string(), v.null()),
         /** True when a poll is long overdue — the screen can say so honestly. */
         stalled: v.boolean(),
       }),
@@ -167,6 +175,10 @@ export const jobs = query({
         job,
         moduleTitle: moduleById.get(job.moduleId)?.title ?? "Deleted module",
         lessonTitle: lesson?.title ?? "Deleted lesson",
+        videoUrl:
+          job.r2Key === undefined
+            ? null
+            : await r2.getUrl(job.r2Key, { expiresIn: DOWNLOAD_URL_TTL_SECONDS }),
         stalled:
           job.status === "generating" &&
           job.nextPollAt !== undefined &&
@@ -524,35 +536,95 @@ export const markStored = internalMutation({
 });
 
 /**
- * Attach the finished video to its lesson.
+ * Record the finished video and stop.
  *
- * Returns `{ attached: false }` rather than throwing when the job is no longer
+ * Deliberately does **not** put it on the lesson. A model that returns fifteen
+ * seconds of something unusable would otherwise publish it to teachers by
+ * itself, which is the mistake the question queue already refuses to make:
+ * generated content is a draft, and a person approving it is the only path to
+ * a learner.
+ *
+ * Returns `{ recorded: false }` rather than throwing when the job is no longer
  * claimable, because the caller has a blob in hand and needs to know to delete
- * it. Throwing would leave the object in the bucket with nothing pointing at
  * it. The re-read inside this transaction is what makes two simultaneous polls
  * safe: Convex serialises them, and the second one loses.
  */
-export const attachResult = internalMutation({
+export const recordVideo = internalMutation({
   args: { jobId: v.id("aiVideoJobs"), r2Key: v.string(), sizeBytes: v.number() },
-  returns: v.object({ attached: v.boolean() }),
+  returns: v.object({ recorded: v.boolean() }),
   handler: async (ctx, args) => {
     const job = await ctx.db.get("aiVideoJobs", args.jobId);
-    if (job === null) return { attached: false };
-    if (job.status !== "generating" || job.assetId !== undefined) return { attached: false };
+    if (job === null) return { recorded: false };
+    if (job.status !== "generating" || job.r2Key !== undefined) return { recorded: false };
+
+    // The provider's work is done, so the polling lifecycle ends here even
+    // though the job does not. Without cancelling the watchdog, a video left
+    // unwatched over a lunch break would be deleted out from under the admin.
+    if (job.watchdogId !== undefined) await ctx.scheduler.cancel(job.watchdogId);
+
+    await ctx.db.patch("aiVideoJobs", job._id, {
+      status: "ready",
+      r2Key: args.r2Key,
+      sizeBytes: args.sizeBytes,
+      readyAt: Date.now(),
+      nextPollAt: undefined,
+      watchdogId: undefined,
+      pendingR2Key: undefined,
+    });
+    return { recorded: true };
+  },
+});
+
+/**
+ * Put the reviewed video on its lesson.
+ *
+ * The only path from a generated file to something a teacher sees, and the
+ * counterpart to `aiReviewQueue.setDecision`: admin-gated, and refused once the
+ * job has already been decided so a second click cannot attach the same video
+ * twice.
+ */
+export const publishToLesson = mutation({
+  args: { jobId: v.id("aiVideoJobs") },
+  returns: v.object({ lessonTitle: v.string() }),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+
+    const job = await ctx.db.get("aiVideoJobs", args.jobId);
+    if (job === null) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "That video no longer exists." });
+    }
+    if (job.status === "complete") {
+      throw new ConvexError({
+        code: "ALREADY_PUBLISHED",
+        message: "That video is already on its lesson.",
+      });
+    }
+    if (job.status !== "ready" || job.r2Key === undefined) {
+      throw new ConvexError({
+        code: "NOT_READY",
+        message: "That video has not finished generating yet.",
+      });
+    }
 
     const lesson = await ctx.db.get("lessons", job.lessonId);
     if (lesson === null) {
-      // Never fall back to another lesson: the admin chose this one.
-      await finish(ctx, job, {
-        status: "failed",
-        errorMessage: "That lesson was deleted while the video was being generated.",
+      // Refused, and the job deliberately stays `ready`.
+      //
+      // Marking it failed here would be theatre: a throw rolls the whole
+      // transaction back, including the patch, so the row would be unchanged
+      // while the code read as though it had recorded something. Leaving it
+      // ready is also the more useful state — the video still exists, and the
+      // admin can discard it or the lesson can be recreated.
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message:
+          "That lesson was deleted while this video was waiting for review. Discard the video, or recreate the lesson.",
       });
-      return { attached: false };
     }
 
     const assetId = await createLessonMaterial(ctx, {
       lesson,
-      key: args.r2Key,
+      key: job.r2Key,
       fileName: `${slugForFile(job.title)}.mp4`,
       title: job.title,
       kind: "video",
@@ -561,24 +633,20 @@ export const attachResult = internalMutation({
       // server-stored file — get this wrong and a teacher is offered a
       // download link for a video.
       contentType: "video/mp4",
-      sizeBytes: args.sizeBytes,
+      ...(job.sizeBytes === undefined ? {} : { sizeBytes: job.sizeBytes }),
     });
 
-    await finish(ctx, job, {
-      status: "complete",
-      assetId,
-      r2Key: args.r2Key,
-    });
+    await finish(ctx, job, { status: "complete", assetId, r2Key: job.r2Key });
 
     await recordAudit(ctx, {
-      actor: { userId: job.requestedBy },
-      action: "aiVideo.attach",
+      actor,
+      action: "aiVideo.publish",
       entityTable: "lessons",
       entityId: lesson._id,
       summary: job.title.slice(0, 80),
     });
 
-    return { attached: true };
+    return { lessonTitle: lesson.title };
   },
 });
 
@@ -598,7 +666,7 @@ export const watchdog = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get("aiVideoJobs", args.jobId);
-    if (job === null || isFinished(job)) return null;
+    if (job === null || isSettled(job)) return null;
     await finish(ctx, job, {
       status: "failed",
       errorMessage: "Timed out waiting for the provider to finish this video.",
@@ -620,7 +688,13 @@ export const sweepStale = internalMutation({
   handler: async (ctx) => ({ swept: await sweepStaleJobs(ctx, Date.now()) }),
 });
 
-/** Stop a job an admin no longer wants. */
+/**
+ * Stop a job, or throw away a video the admin does not want.
+ *
+ * One mutation for both because they are the same act at different moments:
+ * this job is not going to produce anything anyone keeps. `finish` deletes the
+ * bytes, so discarding a rendered video does not leave it in the bucket.
+ */
 export const cancel = mutation({
   args: { jobId: v.id("aiVideoJobs") },
   returns: v.null(),
@@ -653,6 +727,19 @@ function isFinished(job: Doc<"aiVideoJobs">): boolean {
 }
 
 /**
+ * Whether the provider still owes this job anything.
+ *
+ * `ready` is settled but not finished: the video exists and nothing is being
+ * polled, yet the job is not done because a person has not watched it. The
+ * watchdog and the sweep both key off this rather than `isFinished`, or a
+ * video left open over a lunch break would be swept away as if the provider
+ * had stopped responding.
+ */
+function isSettled(job: Doc<"aiVideoJobs">): boolean {
+  return isFinished(job) || job.status === "ready";
+}
+
+/**
  * End a job, once, tidily.
  *
  * Cancels the watchdog so the scheduled table does not accumulate, clears the
@@ -673,10 +760,13 @@ async function finish(
     await ctx.scheduler.cancel(job.watchdogId);
   }
 
-  // An orphan: stored, never attached. Only when this job is not the one that
-  // just attached it.
-  if (job.pendingR2Key !== undefined && outcome.assetId === undefined) {
+  // Anything the job stored but nobody kept. On a publish the bytes become the
+  // lesson's asset and must survive; on a discard, a failure or a timeout there
+  // is nothing left pointing at them, so they would sit in the bucket
+  // unreachable and still billed.
+  if (outcome.assetId === undefined) {
     await deleteBlobIfPresent(ctx, job.pendingR2Key);
+    await deleteBlobIfPresent(ctx, job.r2Key);
   }
 
   await ctx.db.patch("aiVideoJobs", job._id, {

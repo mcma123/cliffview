@@ -475,18 +475,43 @@ describe("what the poller records", () => {
   });
 });
 
-describe("attaching the finished video", () => {
-  const attach = async (jobId: Id<"aiVideoJobs">, key = "generated-video-key") =>
-    await t.mutation(internal.aiVideoQueue.attachResult, {
+describe("a rendered video waits to be watched", () => {
+  const record = async (jobId: Id<"aiVideoJobs">, key = "generated-video-key") =>
+    await t.mutation(internal.aiVideoQueue.recordVideo, {
       jobId,
       r2Key: key,
       sizeBytes: 2_400_000,
     });
 
-  test("the video lands on the lesson as something that plays", async () => {
+  test("the poller stores it and stops, rather than publishing it", async () => {
+    // The property this whole step exists for: fifteen seconds of something
+    // unusable must not reach teachers because a model produced it.
     const jobId = await generatingJob();
-    const result = await attach(jobId);
-    expect(result).toEqual({ attached: true });
+    expect(await record(jobId)).toEqual({ recorded: true });
+
+    const job = await jobRow(jobId);
+    expect(job?.status).toBe("ready");
+    expect(job?.r2Key).toBe("generated-video-key");
+    expect(job?.assetId).toBeUndefined();
+    // Nothing on the lesson yet.
+    expect((await attachments()).links).toHaveLength(0);
+  });
+
+  test("the admin can watch it before deciding", async () => {
+    const jobId = await generatingJob();
+    await record(jobId);
+
+    const view = await admin().query(api.aiVideoQueue.jobs, { now: Date.now() });
+    const row = view.jobs.find((entry) => entry.job._id === jobId);
+    // A playable URL, or the review step is a button over a black rectangle.
+    expect(row?.videoUrl).toMatch(/^https?:\/\//);
+  });
+
+  test("publishing is what puts it on the lesson", async () => {
+    const jobId = await generatingJob();
+    await record(jobId);
+    const result = await admin().mutation(api.aiVideoQueue.publishToLesson, { jobId });
+    expect(result.lessonTitle).toBe("Why this matters");
 
     const { assets, links } = await attachments();
     const video = assets.find((asset) => asset.kind === "video");
@@ -510,11 +535,51 @@ describe("attaching the finished video", () => {
     expect(job?.pendingR2Key).toBeUndefined();
   });
 
+  test("publishing twice is refused, so one video cannot land twice", async () => {
+    const jobId = await generatingJob();
+    await record(jobId);
+    await admin().mutation(api.aiVideoQueue.publishToLesson, { jobId });
+
+    await expect(admin().mutation(api.aiVideoQueue.publishToLesson, { jobId })).rejects.toThrow(
+      /ALREADY_PUBLISHED|already on its lesson/i,
+    );
+
+    const { assets } = await attachments();
+    expect(assets.filter((asset) => asset.kind === "video")).toHaveLength(1);
+  });
+
+  test("a video that has not rendered yet cannot be published", async () => {
+    const jobId = await generatingJob();
+    await expect(admin().mutation(api.aiVideoQueue.publishToLesson, { jobId })).rejects.toThrow(
+      /NOT_READY|not finished generating/i,
+    );
+  });
+
+  test("publishing needs a serving admin", async () => {
+    const jobId = await generatingJob();
+    await record(jobId);
+    await expect(
+      asUser(staffId).mutation(api.aiVideoQueue.publishToLesson, { jobId }),
+    ).rejects.toThrow(/FORBIDDEN|Admin access/i);
+    expect((await attachments()).links).toHaveLength(0);
+  });
+
+  test("discarding a video nobody wants throws the bytes away too", async () => {
+    const jobId = await generatingJob();
+    await record(jobId);
+    await admin().mutation(api.aiVideoQueue.cancel, { jobId });
+
+    const job = await jobRow(jobId);
+    expect(job?.status).toBe("cancelled");
+    expect((await attachments()).assets.filter((a) => a.kind === "video")).toHaveLength(0);
+  });
+
   test("a teacher actually receives it as a video", async () => {
     // The closest a test gets to the player: drive the learner surface and
     // check what it hands back. This is what catches a missing content type.
     const jobId = await generatingJob();
-    await attach(jobId);
+    await record(jobId);
+    await admin().mutation(api.aiVideoQueue.publishToLesson, { jobId });
 
     await t.run(async (ctx) => {
       await ctx.db.insert("enrollments", {
@@ -534,35 +599,40 @@ describe("attaching the finished video", () => {
     expect(delivered.some((asset) => (asset.contentType ?? "").startsWith("video/"))).toBe(true);
   });
 
-  test("attaching twice attaches nothing further", async () => {
+  test("recording twice keeps the first video and refuses the second", async () => {
     // Two polls can race. Convex serialises the transactions and the second
-    // one must lose, or a lesson ends up with the same video twice.
+    // one must lose, or the job would point at bytes nobody is holding.
     const jobId = await generatingJob();
-    expect(await attach(jobId, "first-key")).toEqual({ attached: true });
-    expect(await attach(jobId, "second-key")).toEqual({ attached: false });
+    expect(await record(jobId, "first-key")).toEqual({ recorded: true });
+    expect(await record(jobId, "second-key")).toEqual({ recorded: false });
 
-    const { assets } = await attachments();
-    expect(assets.filter((asset) => asset.kind === "video")).toHaveLength(1);
+    expect((await jobRow(jobId))?.r2Key).toBe("first-key");
   });
 
-  test("a deleted lesson fails the job instead of guessing another one", async () => {
+  test("a lesson deleted during review fails the publish rather than guessing", async () => {
     const jobId = await generatingJob();
+    await record(jobId);
     await t.run(async (ctx) => {
       await ctx.db.delete("lessons", lessonId);
     });
 
-    expect(await attach(jobId)).toEqual({ attached: false });
+    await expect(admin().mutation(api.aiVideoQueue.publishToLesson, { jobId })).rejects.toThrow(
+      /was deleted while this video was waiting/i,
+    );
+
+    // Deliberately still `ready`, not `failed`: a throw rolls back any patch
+    // made alongside it, so recording a failure here would be theatre. The
+    // video still exists and can be discarded.
     const job = await jobRow(jobId);
-    expect(job?.status).toBe("failed");
-    expect(job?.errorMessage).toMatch(/lesson was deleted/i);
+    expect(job?.status).toBe("ready");
     expect((await attachments()).assets.filter((a) => a.kind === "video")).toHaveLength(0);
   });
 
-  test("a cancelled job cannot still deliver a video", async () => {
+  test("a cancelled job cannot still record a video", async () => {
     const jobId = await generatingJob();
     await admin().mutation(api.aiVideoQueue.cancel, { jobId });
 
-    expect(await attach(jobId)).toEqual({ attached: false });
+    expect(await record(jobId)).toEqual({ recorded: false });
     expect((await attachments()).assets.filter((a) => a.kind === "video")).toHaveLength(0);
   });
 });
@@ -577,16 +647,18 @@ describe("recovering a job nobody came back for", () => {
     expect(job?.errorMessage).toMatch(/Timed out/i);
   });
 
-  test("the watchdog leaves a job that finished normally alone", async () => {
+  test("the watchdog leaves a video that is waiting to be watched", async () => {
+    // `ready` is settled but not finished. Without this, a video left open
+    // over a lunch break would be swept away as if the provider had stalled.
     const jobId = await generatingJob();
-    await t.mutation(internal.aiVideoQueue.attachResult, {
+    await t.mutation(internal.aiVideoQueue.recordVideo, {
       jobId,
       r2Key: "generated-video-key",
       sizeBytes: 100,
     });
     await t.mutation(internal.aiVideoQueue.watchdog, { jobId });
 
-    expect((await jobRow(jobId))?.status).toBe("complete");
+    expect((await jobRow(jobId))?.status).toBe("ready");
   });
 
   test("the sweep ends a job whose poll is long overdue", async () => {
