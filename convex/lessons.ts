@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { assertFileFacts, assertKeyUnclaimed } from "./lib/assets";
 import { recordAudit, stamp } from "./lib/audit";
+import { createLessonMaterial } from "./lib/lessonMaterial";
 import { STEP_BLOB_BUDGET, STEP_ROW_BUDGET, removeLessonChildren } from "./lib/deletion";
 import { NO_QUESTIONS_MESSAGE, hasQuestions } from "./lib/assessments";
 import { requireAdmin } from "./lib/authz";
@@ -509,44 +510,26 @@ export const addMaterial = mutation({
     const actor = await requireAdmin(ctx);
     const lesson = await lessonOrThrow(ctx, args.lessonId);
 
-    const fileName = assertFileFacts(args.fileName, args.sizeBytes);
-    const title = args.title.trim();
-    if (title.length === 0) {
-      throw new ConvexError({ code: "INVALID", message: "An asset needs a title." });
-    }
-    await assertKeyUnclaimed(ctx, args.key);
-
-    const assetId = await ctx.db.insert("assets", {
-      // The asset belongs to the module, not the lesson: that is the ownership
-      // the schema models, and it is what lets the same file be attached to a
-      // second lesson later without uploading it twice.
-      moduleId: lesson.moduleId,
-      title,
-      description: "",
+    // The body lives in `lib/lessonMaterial.ts` because the AI video poller
+    // attaches files the same way and cannot be a public mutation. Everything
+    // this mutation still owns is the part that differs: the admin check above
+    // and the audit line below.
+    const assetId = await createLessonMaterial(ctx, {
+      lesson,
+      key: args.key,
+      fileName: args.fileName,
+      title: args.title,
       kind: args.kind,
-      publishState: "published",
-      order: await nextAssetOrder(ctx, lesson.moduleId),
-      r2Key: args.key,
-      fileName,
       ...(args.contentType === undefined ? {} : { contentType: args.contentType }),
       ...(args.sizeBytes === undefined ? {} : { sizeBytes: args.sizeBytes }),
-      ...stamp(),
     });
 
-    await ctx.db.insert("lessonAssets", {
-      lessonId: lesson._id,
-      assetId,
-      order: await nextLessonAssetOrder(ctx, lesson._id),
-    });
-
-    await ctx.db.patch("lessons", lesson._id, stamp());
-    await ctx.db.patch("modules", lesson.moduleId, stamp());
     await recordAudit(ctx, {
       actor,
       action: "lesson.addMaterial",
       entityTable: "lessons",
       entityId: lesson._id,
-      summary: fileName,
+      summary: args.fileName.trim(),
     });
     return assetId;
   },

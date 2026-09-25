@@ -18,6 +18,7 @@ import {
   questionDifficulty,
   reviewDecision,
   reviewStatus,
+  videoJobStatus,
 } from "./validators";
 
 /**
@@ -453,6 +454,76 @@ export default defineSchema({
      * Indexing an optional field is fine: rows without a moduleId sort first
      * and are simply never in an equality range.
      */
+    .index("by_moduleId_and_startedAt", ["moduleId", "startedAt"]),
+
+  /**
+   * One AI video generation, from reading a document to a file on a lesson.
+   *
+   * A separate table from `aiGenerations` rather than a wider one: that row's
+   * `questionCount` is required and it feeds the AI review screen's filter
+   * chips, so a video run there would appear as a question run that drafted
+   * nothing.
+   *
+   * The provider's download URL is deliberately **not** a field. It is an
+   * expiring credential, not an address, and it lives inside the one action
+   * invocation that uses it.
+   */
+  aiVideoJobs: defineTable({
+    lessonId: v.id("lessons"),
+    /**
+     * Denormalised from the lesson, against the usual rule, for two reasons a
+     * join cannot serve: the asset belongs to the module, and a job has to
+     * still name its destination module after the lesson has been deleted.
+     */
+    moduleId: v.id("modules"),
+
+    /** The document the prompt was drafted from. */
+    sourceAssetId: v.optional(v.id("assets")),
+    sourceFileName: v.optional(v.string()),
+    /** What the model proposed, kept even after an edit so the two compare. */
+    draftPrompt: v.optional(v.string()),
+    /** What was actually sent, frozen at claim time. */
+    submittedPrompt: v.optional(v.string()),
+
+    title: v.string(),
+    model: v.optional(v.string()),
+    durationSeconds: v.optional(v.number()),
+    resolution: v.optional(v.string()),
+    aspectRatio: v.optional(v.string()),
+
+    status: videoJobStatus,
+    /** Carried so a scheduled step can name the actor in an audit row. */
+    requestedBy: v.string(),
+
+    providerJobId: v.optional(v.string()),
+    pollingUrl: v.optional(v.string()),
+
+    attempts: v.number(),
+    consecutiveErrors: v.number(),
+    nextPollAt: v.optional(v.number()),
+    lastPolledAt: v.optional(v.number()),
+    deadlineAt: v.optional(v.number()),
+    /** Cancelled on completion so the scheduled table does not accumulate. */
+    watchdogId: v.optional(v.id("_scheduled_functions")),
+
+    startedAt: v.number(),
+    submittedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+
+    /**
+     * Set the instant `r2.store` returns, cleared when the attach commits.
+     * A value still here on a finished job means one thing exactly: a blob
+     * nobody owns, which the watchdog and the sweep delete.
+     */
+    pendingR2Key: v.optional(v.string()),
+    assetId: v.optional(v.id("assets")),
+    r2Key: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+  })
+    /** Work that is due: status "generating" with nextPollAt in the past. */
+    .index("by_status_and_nextPollAt", ["status", "nextPollAt"])
+    .index("by_requestedBy_and_startedAt", ["requestedBy", "startedAt"])
+    .index("by_lessonId_and_startedAt", ["lessonId", "startedAt"])
     .index("by_moduleId_and_startedAt", ["moduleId", "startedAt"]),
 
   aiQuestions: defineTable({

@@ -1,5 +1,13 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BarChart3, Users, BookOpen, Sparkles, FileText, ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart3,
+  BookOpen,
+  Clapperboard,
+  FileText,
+  Sparkles,
+  Users,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { CliffviewWordmark } from "./cliffview-logo";
 import { cn } from "@/lib/utils";
@@ -16,6 +24,7 @@ const adminNav: NavItem[] = [
   { to: "/academy/admin/staff", label: "Staff", icon: Users, ready: true },
   { to: "/academy/admin/modules", label: "Modules", icon: BookOpen, ready: true },
   { to: "/academy/admin/ai-review", label: "AI Review", icon: Sparkles, ready: true },
+  { to: "/academy/admin/ai-videos", label: "AI Videos", icon: Clapperboard, ready: true },
   { to: "/academy/admin/reports", label: "Reports", icon: FileText, ready: true },
 ];
 

@@ -1475,3 +1475,62 @@ export function presentAiReviewQueue(data: AiReviewQueue, now: number) {
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// AI videos
+// ---------------------------------------------------------------------------
+
+type AiVideoJobs = FunctionReturnType<typeof api.aiVideoQueue.jobs>;
+
+const VIDEO_STATUS_LABELS: Record<string, string> = {
+  drafting: "Reading the document",
+  draft_ready: "Prompt ready",
+  generating: "Generating",
+  complete: "On the lesson",
+  failed: "Failed",
+  cancelled: "Cancelled",
+};
+
+function videoStatusTone(status: string): string {
+  if (status === "complete") return "bg-success/15 text-success";
+  if (status === "failed") return "bg-destructive/10 text-destructive";
+  if (status === "cancelled") return "bg-muted text-muted-foreground";
+  if (status === "generating") return "bg-primary-soft text-primary";
+  return "bg-gold-soft text-primary-deep";
+}
+
+/**
+ * The AI videos screen.
+ *
+ * `stalled` arrives already decided by the server, because it is a comparison
+ * against a clock and the query takes `now` as an argument rather than reading
+ * it. All this adds is the words.
+ */
+export function presentAiVideoJobs(data: AiVideoJobs, now: number) {
+  return {
+    configured: data.configured,
+    modules: data.modules,
+    jobs: data.jobs.map(({ job, moduleTitle, lessonTitle, stalled }) => ({
+      id: job._id,
+      title: job.title,
+      moduleTitle,
+      lessonTitle,
+      status: job.status,
+      statusLabel: stalled ? "Not responding" : (VIDEO_STATUS_LABELS[job.status] ?? job.status),
+      statusTone: stalled ? "bg-destructive/10 text-destructive" : videoStatusTone(job.status),
+      /** Only a job still in flight can be cancelled, or resumed by editing. */
+      isRunning: job.status === "generating" || job.status === "drafting",
+      isReadyToGenerate: job.status === "draft_ready",
+      prompt: job.submittedPrompt ?? job.draftPrompt ?? "",
+      sourceLabel:
+        job.sourceFileName === undefined
+          ? `Started ${formatRelativeTime(job.startedAt, now)}`
+          : `From ${job.sourceFileName} · started ${formatRelativeTime(job.startedAt, now)}`,
+      // Surfaced rather than swallowed: a failed run with no reason shown
+      // teaches nobody anything.
+      errorMessage: job.errorMessage ?? null,
+      /** True once the video is on the lesson, so the card can say where it went. */
+      delivered: job.assetId !== undefined,
+    })),
+  };
+}

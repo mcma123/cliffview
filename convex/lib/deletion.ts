@@ -178,6 +178,27 @@ export async function removeModuleContent(
     }
   }
 
+  // Video jobs for this module.
+  //
+  // Cancelled by deleting the row and its scheduled watchdog directly, never
+  // by scheduling anything: `content.test.ts` and `staff.test.ts` drain the
+  // scheduler with `vi.runAllTimers`, which fires regardless of delay, so a
+  // cascade that scheduled work here would make real OpenRouter and R2 calls
+  // on every `npm test`.
+  //
+  // A job caught mid-flight may hold a stored-but-unattached blob; that is the
+  // one thing here that would otherwise leak.
+  const videoJobs = await ctx.db
+    .query("aiVideoJobs")
+    .withIndex("by_moduleId_and_startedAt", (q) => q.eq("moduleId", module._id))
+    .take(capped(budget, MAX_SIBLINGS));
+  for (const job of videoJobs) {
+    if (job.watchdogId !== undefined) await ctx.scheduler.cancel(job.watchdogId);
+    await deleteBlobIfPresent(ctx, job.pendingR2Key);
+    await ctx.db.delete("aiVideoJobs", job._id);
+    budget.rows -= 1;
+  }
+
   // Row only — the blob belongs to the asset this run read (see the header).
   const runs = await ctx.db
     .query("aiGenerations")
@@ -287,6 +308,12 @@ async function isEmpty(
     .withIndex("by_moduleId_and_startedAt", (q) => q.eq("moduleId", module._id))
     .take(1);
   if (runs.length > 0) return false;
+
+  const videoJobs = await ctx.db
+    .query("aiVideoJobs")
+    .withIndex("by_moduleId_and_startedAt", (q) => q.eq("moduleId", module._id))
+    .take(1);
+  if (videoJobs.length > 0) return false;
 
   if (opts.deleteEnrollments) {
     const enrollments = await ctx.db

@@ -127,6 +127,24 @@ export const generationStatus = v.union(
 );
 export type GenerationStatus = Infer<typeof generationStatus>;
 
+/**
+ * The life of one AI video job.
+ *
+ * Separate from `generationStatus` because a video has a step a question run
+ * does not: the prompt is drafted, read by a person, and only then submitted.
+ * `draft_ready` is that pause, and it is the whole reason the feature is two
+ * actions rather than one.
+ */
+export const videoJobStatus = v.union(
+  v.literal("drafting"),
+  v.literal("draft_ready"),
+  v.literal("generating"),
+  v.literal("complete"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+export type VideoJobStatus = Infer<typeof videoJobStatus>;
+
 /** Append-only event kinds that feed the analytics rollups. */
 export const progressEventKind = v.union(
   v.literal("module_started"),
