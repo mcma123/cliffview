@@ -1193,6 +1193,35 @@ describe("importing staff from a spreadsheet", () => {
     expect(report.rows[0].reason).toContain("Foundation Phase");
   });
 
+  test("the teacher template's grades resolve to Cliffview phases", async () => {
+    const report = await importRows([
+      row({ phase: "R" }),
+      row({
+        line: 3,
+        firstName: "Thabo",
+        lastName: "Dlamini",
+        email: "thabo@cliffview.example",
+        phase: "Grade 4",
+      }),
+    ]);
+
+    expect(report).toMatchObject({ ready: 2, invalid: 0 });
+    const phaseNames = await t.run(async (ctx) => {
+      const foundationStaff = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", "nomsa@cliffview.example"))
+        .first();
+      const intersenStaff = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", "thabo@cliffview.example"))
+        .first();
+      const foundation = foundationStaff && (await ctx.db.get("phases", foundationStaff.phaseId));
+      const intersen = intersenStaff && (await ctx.db.get("phases", intersenStaff.phaseId));
+      return [foundation?.name, intersen?.name];
+    });
+    expect(phaseNames).toEqual(["Foundation Phase", "Intersen Phase"]);
+  });
+
   test("a blank role means staff, and admin is understood", async () => {
     await importRows([
       row({ accessRole: "" }),

@@ -29,6 +29,7 @@ Entry points owned here:
 - `server.ts` — SSR entry override wired via `tanstackStart.server.entry` in `vite.config.ts`. Unwraps h3-swallowed 500s
 - `styles.css` — Tailwind v4 `@theme inline` design system. Every color must be `oklch` and declared as a token in both `:root` and `.dark`; register new tokens as `--color-<name>: var(--<name>)`. Brand tokens: `gold`, `gold-soft`, `primary-deep`, `primary-soft`, `success`. The `.dark` block is still the generic slate/blue default and is not brand-aligned; there is no theme toggle
 - `routeTree.gen.ts` — generated, never edit
+- `assets/` — source-controlled files emitted by Vite. It currently owns the exact Cliffview teacher workbook downloaded from the admin staff-import dialog
 - `hooks/` — `use-mobile.tsx` (768px breakpoint) and `use-asset-upload.ts`. The latter is the **only Convex-touching module outside `routes/`**: it owns the three-leg upload round trip, which would otherwise be copied into every screen with a drop zone. It is keyed by asset id rather than instantiated per zone, because a screen renders a zone per asset and a hook call inside that map would break the rules of hooks the moment the list changed
 
 ## Work Guidance
@@ -50,4 +51,4 @@ From the repo root: `npm run format`, `npm run lint`, `npx tsc --noEmit`, `npm r
 - `components/AGENTS.md` — app shells, feature components, dialogs, brand marks, and the shadcn primitives
 - `lib/AGENTS.md` — utilities, server-only config, SSR error plumbing, server-function pattern
 
-Owned by src, no child doc: `router.tsx`, `start.ts`, `server.ts`, `styles.css`, `routeTree.gen.ts`, `hooks/`
+Owned by src, no child doc: `router.tsx`, `start.ts`, `server.ts`, `styles.css`, `routeTree.gen.ts`, `hooks/`, `assets/`

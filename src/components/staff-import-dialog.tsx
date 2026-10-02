@@ -43,13 +43,13 @@ export function StaffImportDialog({
   children,
   onFile,
   onImport,
-  onTemplate,
+  templateHref,
 }: {
   children: React.ReactNode;
   /** Parse and preview. Returns null when the file could not be read. */
   onFile: (file: File) => Promise<ImportReport | null>;
   onImport: () => Promise<ImportReport | null>;
-  onTemplate: () => void;
+  templateHref: string;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<"idle" | "reading" | "importing">("idle");
@@ -131,13 +131,13 @@ export function StaffImportDialog({
                 <p className="text-xs text-muted-foreground">
                   Not sure of the columns? Start from the template.
                 </p>
-                <button
-                  type="button"
-                  onClick={onTemplate}
+                <a
+                  href={templateHref}
+                  download="cliffview_teacher_import_template.xlsx"
                   className="inline-flex shrink-0 items-center gap-2 rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
                 >
                   <Download className="h-4 w-4" /> Download template
-                </button>
+                </a>
               </div>
 
               {report === null ? null : <Preview report={report} />}

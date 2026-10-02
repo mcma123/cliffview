@@ -16,14 +16,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { complianceMeterClass, presentAdminStaffDirectory } from "@/application/academy/presenters";
+import staffImportTemplateUrl from "@/assets/cliffview_teacher_import_template.xlsx?url";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
 import { BulkAssignDialog } from "@/components/bulk-assign-dialog";
 import { StaffImportDialog, type ImportReport } from "@/components/staff-import-dialog";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { errorMessage } from "@/lib/convex-error";
-import { csvFileName, downloadCsv, toCsv } from "@/lib/csv";
-import { TEMPLATE_HEADERS, readStaffFile, type ParsedStaffRow } from "@/lib/staff-import";
+import { readStaffFile, type ParsedStaffRow } from "@/lib/staff-import";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -121,14 +121,6 @@ function AdminStaffIndexComponent() {
     }
   }
 
-  /** Headers only — `toCsv` with no rows is exactly a template. */
-  function downloadTemplate() {
-    downloadCsv(
-      csvFileName("staff-import-template", now),
-      toCsv({ headers: TEMPLATE_HEADERS, rows: [] }),
-    );
-  }
-
   /**
    * Hand every published module to every active staff member.
    *
@@ -202,7 +194,7 @@ function AdminStaffIndexComponent() {
             <StaffImportDialog
               onFile={previewFile}
               onImport={commitImport}
-              onTemplate={downloadTemplate}
+              templateHref={staffImportTemplateUrl}
             >
               <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-gold hover:text-gold">
                 <Upload className="h-4 w-4" /> Import staff

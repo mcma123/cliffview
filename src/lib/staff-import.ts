@@ -53,7 +53,7 @@ const COLUMNS: Record<keyof Omit<ParsedStaffRow, "line">, string[]> = {
   lastName: ["lastname", "last", "surname", "familyname"],
   preferredName: ["preferredname", "knownas", "nickname"],
   email: ["email", "emailaddress", "workemail"],
-  jobTitle: ["jobtitle", "job", "position", "role", "designation"],
+  jobTitle: ["jobtitle", "job", "position", "role", "designation", "stafftype"],
   accessRole: ["accessrole", "access", "permission", "systemrole", "userrole"],
   phase: ["phase", "phasename", "department", "grade"],
 };
@@ -203,18 +203,6 @@ export function rowsToStaff(table: unknown[][]): ParseResult {
 
   return { rows, ignoredColumns, error: null };
 }
-
-/** The columns the downloadable template carries, in order. */
-export const TEMPLATE_HEADERS = [
-  "Honorific",
-  "First name",
-  "Last name",
-  "Preferred name",
-  "Email",
-  "Job title",
-  "Access role",
-  "Phase",
-];
 
 /** Whether this app will try to read the file at all. */
 export function isSupportedSheet(fileName: string): boolean {

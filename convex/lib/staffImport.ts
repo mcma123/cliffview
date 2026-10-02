@@ -81,6 +81,20 @@ function normaliseEmail(raw: string): string {
 }
 
 /**
+ * The teacher workbook identifies a phase by grade, while the database stores
+ * the school's reporting groups. Cliffview's primary-school grouping is
+ * Foundation for RR–3 and Intersen for 4–7.
+ */
+function phaseLookupKey(raw: string): string {
+  const nameKey = raw.trim().toLowerCase();
+  const gradeKey = nameKey.replace(/^grade\s*/, "").replace(/[^a-z0-9]/g, "");
+
+  if (["rr", "r", "1", "2", "3"].includes(gradeKey)) return "foundation phase";
+  if (["4", "5", "6", "7"].includes(gradeKey)) return "intersen phase";
+  return nameKey;
+}
+
+/**
  * Judge every row against the database and against the rest of the file.
  *
  * Read-only, so the preview query and the import mutation can both call it and
@@ -160,7 +174,7 @@ export async function validateImportRows(
       continue;
     }
 
-    const phaseKey = row.phase.trim().toLowerCase();
+    const phaseKey = phaseLookupKey(row.phase);
     if (phaseKey.length === 0) {
       verdicts.push(invalid(`No phase. Use one of: ${phaseList}.`));
       continue;

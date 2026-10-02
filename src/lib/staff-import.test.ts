@@ -72,6 +72,33 @@ describe("mapping a sheet onto staff", () => {
     });
   });
 
+  test("the Cliffview teacher template maps onto the import fields", () => {
+    const result = rowsToStaff([
+      [
+        "First Name",
+        "Last Name",
+        "Email Address",
+        "Staff Type",
+        "Position / Role",
+        "Grade",
+        "Employment Type",
+        "Status",
+      ],
+      ["Ada", "Abbott", "ada@x.co.za", "Educator", "1A", "1", "GDE", "Active"],
+    ]);
+
+    expect(result.error).toBeNull();
+    expect(result.rows[0]).toMatchObject({
+      firstName: "Ada",
+      lastName: "Abbott",
+      email: "ada@x.co.za",
+      jobTitle: "Educator",
+      phase: "1",
+      accessRole: "",
+    });
+    expect(result.ignoredColumns).toEqual(["Position / Role", "Employment Type", "Status"]);
+  });
+
   test("the line number is the one the admin sees in Excel", () => {
     const result = rowsToStaff([
       header,
