@@ -80,7 +80,7 @@ export function DragAndDropZone({
   const looksUnavailable = disabled && !busy;
 
   const accept = useCallback(
-    (files: FileList | null | undefined) => {
+    (files: FileList | File[] | null | undefined) => {
       if (files === null || files === undefined || inert) return;
       // One call per file. The caller decides whether to run them in parallel;
       // this only stops dropping four files from uploading one and silently
@@ -118,7 +118,10 @@ export function DragAndDropZone({
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
+      // FileList is live: clearing the input also empties the same object.
+      // Snapshot the File objects first or a successful picker selection
+      // reaches `accept` as an empty list and appears to do nothing.
+      const files = e.target.files === null ? [] : Array.from(e.target.files);
       // Clear it, or picking the same file again after a failure fires no
       // change event and the retry looks like a dead button.
       e.target.value = "";
