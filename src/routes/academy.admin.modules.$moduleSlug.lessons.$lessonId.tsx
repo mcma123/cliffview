@@ -2,14 +2,26 @@ import { convexQuery, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ModuleAssetKind, ModuleLessonKind } from "@/domain/academy/entities";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { formatAssetMeta, presentAdminLessonDetail } from "@/application/academy/presenters";
 import { api } from "../../convex/_generated/api";
-import { ArrowDown, ArrowLeft, ArrowUp, Eye, FileText, Plus, Save, Upload, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Eye,
+  FileText,
+  Plus,
+  Save,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { DragAndDropZone } from "@/components/drag-and-drop-zone";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MAX_FILE_BYTES, useAssetUploads } from "@/hooks/use-asset-upload";
 import { errorMessage } from "@/lib/convex-error";
 import { toast } from "sonner";
@@ -67,6 +79,26 @@ function AdminLessonEditor() {
   const uploads = useAssetUploads();
   const addMaterial = useMutation({ mutationFn: useConvexMutation(api.lessons.addMaterial) });
   const reorderAssets = useMutation({ mutationFn: useConvexMutation(api.lessons.reorderAssets) });
+  const removeLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.remove) });
+  const navigate = useNavigate();
+
+  /**
+   * Back to the module first, then delete.
+   *
+   * This screen subscribes to `lessons.adminDetail`, which throws NOT_FOUND the
+   * moment the lesson is gone, so deleting in place would swap the page for an
+   * error before the toast could say it worked.
+   */
+  async function deleteLesson() {
+    const title = data.lessonTitle;
+    await navigate({ to: data.modulePath, replace: true });
+    try {
+      await removeLesson.mutateAsync({ lessonId: lessonDocId });
+      toast.success(`${title} deleted.`);
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not delete that lesson."));
+    }
+  }
 
   // Files in flight, so several dropped at once each show their own progress
   // rather than one shared bar. Keyed by a generated id because there is no
@@ -209,7 +241,7 @@ function AdminLessonEditor() {
               copy.
             </p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Link
               to={data.previewPath}
               className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-5 py-3 text-sm font-semibold text-foreground hover:bg-muted"
@@ -223,6 +255,23 @@ function AdminLessonEditor() {
             >
               <Save className="h-4 w-4" /> {saving ? "Saving..." : "Save changes"}
             </button>
+            <ConfirmDialog
+              icon={Trash2}
+              title={`Delete ${data.lessonTitle}`}
+              description="The lesson is removed from this module for good."
+              body={
+                <p className="text-sm text-muted-foreground">
+                  Staff progress on this lesson is deleted with it. Files attached to it stay in the
+                  module&rsquo;s resources, so you can attach them elsewhere or delete them there.
+                </p>
+              }
+              confirmLabel="Delete lesson"
+              onConfirm={deleteLesson}
+            >
+              <button className="inline-flex items-center gap-2 rounded-2xl border border-destructive/40 px-5 py-3 text-sm font-semibold text-destructive hover:bg-destructive/10">
+                <Trash2 className="h-4 w-4" /> Delete lesson
+              </button>
+            </ConfirmDialog>
           </div>
         </div>
 

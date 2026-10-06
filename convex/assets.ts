@@ -390,32 +390,7 @@ export const remove = mutation({
     const actor = await requireAdmin(ctx);
     const asset = await assetOrThrow(ctx, args.assetId);
 
-    const links = await ctx.db
-      .query("lessonAssets")
-      .withIndex("by_assetId", (q) => q.eq("assetId", asset._id))
-      .take(MAX_SIBLINGS);
-    for (const link of links) await ctx.db.delete("lessonAssets", link._id);
-
-    // Hero references live on the lessons of this module only, so the scan is
-    // bounded by the module rather than the table.
-    const lessons = await ctx.db
-      .query("lessons")
-      .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", asset.moduleId))
-      .take(MAX_SIBLINGS);
-    for (const lesson of lessons) {
-      if (lesson.heroAssetId === asset._id) {
-        await ctx.db.patch("lessons", lesson._id, { heroAssetId: undefined, ...stamp() });
-      }
-    }
-
-    const module = await ctx.db.get("modules", asset.moduleId);
-    if (module !== null && module.featuredAssetId === asset._id) {
-      await ctx.db.patch("modules", module._id, { featuredAssetId: undefined });
-    }
-
-    await deleteBlobIfPresent(ctx, asset.r2Key);
-
-    await ctx.db.delete("assets", asset._id);
+    await removeAssetAndReferences(ctx, asset);
     await renumberAssets(ctx, asset.moduleId);
     await ctx.db.patch("modules", asset.moduleId, stamp());
     await recordAudit(ctx, {
@@ -428,3 +403,101 @@ export const remove = mutation({
     return null;
   },
 });
+
+/**
+ * Most assets one bulk delete may take.
+ *
+ * Each costs a blob delete through the R2 component, which spends write and
+ * scheduler budget — the same reason `STEP_BLOB_BUDGET` in `lib/deletion.ts`
+ * is 50. A module's resource list is well under this in practice.
+ */
+const MAX_BULK_ASSETS = 50;
+
+/**
+ * Delete several of one module's assets at once — the "select and delete" on
+ * the module editor's resource list.
+ *
+ * All or nothing: every id is checked to exist and to belong to `moduleId`
+ * before anything is deleted, so a stale selection (somebody else removed one
+ * a moment ago) refuses cleanly instead of deleting half the list. Scoping to
+ * one module also means a mis-wired selection cannot reach another module's
+ * files.
+ */
+export const removeMany = mutation({
+  args: { moduleId: v.id("modules"), assetIds: v.array(v.id("assets")) },
+  returns: v.object({ removed: v.number() }),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+
+    const assetIds = [...new Set(args.assetIds)];
+    if (assetIds.length === 0) {
+      throw new ConvexError({ code: "INVALID", message: "Select at least one file to delete." });
+    }
+    if (assetIds.length > MAX_BULK_ASSETS) {
+      throw new ConvexError({
+        code: "INVALID",
+        message: `Delete at most ${MAX_BULK_ASSETS} files at a time.`,
+      });
+    }
+
+    const assets: Doc<"assets">[] = [];
+    for (const assetId of assetIds) {
+      const asset = await assetOrThrow(ctx, assetId);
+      if (asset.moduleId !== args.moduleId) {
+        throw new ConvexError({
+          code: "CROSS_MODULE",
+          message: "Those files do not all belong to this module. Reload and try again.",
+        });
+      }
+      assets.push(asset);
+    }
+
+    for (const asset of assets) await removeAssetAndReferences(ctx, asset);
+
+    // Once, after every delete, rather than per asset.
+    await renumberAssets(ctx, args.moduleId);
+    await ctx.db.patch("modules", args.moduleId, stamp());
+    await recordAudit(ctx, {
+      actor,
+      action: "asset.removeMany",
+      entityTable: "modules",
+      entityId: args.moduleId,
+      summary: assets.map((asset) => asset.title).join(", "),
+    });
+    return { removed: assets.length };
+  },
+});
+
+/**
+ * Delete one asset row, its blob, and everything pointing at it.
+ *
+ * Shared by `remove` and `removeMany` so the two cannot disagree about which
+ * references exist. The caller renumbers and stamps the module afterwards.
+ */
+async function removeAssetAndReferences(ctx: MutationCtx, asset: Doc<"assets">): Promise<void> {
+  const links = await ctx.db
+    .query("lessonAssets")
+    .withIndex("by_assetId", (q) => q.eq("assetId", asset._id))
+    .take(MAX_SIBLINGS);
+  for (const link of links) await ctx.db.delete("lessonAssets", link._id);
+
+  // Hero references live on the lessons of this module only, so the scan is
+  // bounded by the module rather than the table.
+  const lessons = await ctx.db
+    .query("lessons")
+    .withIndex("by_moduleId_and_order", (q) => q.eq("moduleId", asset.moduleId))
+    .take(MAX_SIBLINGS);
+  for (const lesson of lessons) {
+    if (lesson.heroAssetId === asset._id) {
+      await ctx.db.patch("lessons", lesson._id, { heroAssetId: undefined, ...stamp() });
+    }
+  }
+
+  const module = await ctx.db.get("modules", asset.moduleId);
+  if (module !== null && module.featuredAssetId === asset._id) {
+    await ctx.db.patch("modules", module._id, { featuredAssetId: undefined });
+  }
+
+  await deleteBlobIfPresent(ctx, asset.r2Key);
+  await ctx.db.delete("assets", asset._id);
+}

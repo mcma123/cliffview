@@ -323,6 +323,65 @@ describe("the lesson-asset join", () => {
   });
 });
 
+describe("deleting several assets at once", () => {
+  test("removes every selected asset and its references, and leaves the rest", async () => {
+    const keep = await admin.mutation(api.assets.create, {
+      moduleId,
+      title: "Keep",
+      kind: "document",
+    });
+    const a = await admin.mutation(api.assets.create, { moduleId, title: "A", kind: "document" });
+    const b = await admin.mutation(api.assets.create, { moduleId, title: "B", kind: "video" });
+    const lesson = await admin.mutation(api.lessons.create, {
+      moduleId,
+      title: "L",
+      kind: "video",
+    });
+    await admin.mutation(api.lessons.attachAsset, { lessonId: lesson.lessonId, assetId: a });
+    await admin.mutation(api.lessons.attachAsset, { lessonId: lesson.lessonId, assetId: keep });
+    await admin.mutation(api.modules.update, { moduleId, featuredAssetId: b });
+
+    const result = await admin.mutation(api.assets.removeMany, { moduleId, assetIds: [a, b, a] });
+
+    expect(result.removed).toBe(2);
+    const detail = await admin.query(api.modules.adminDetail, { slug: "ordering-fixture" });
+    expect(detail.assets.map((asset) => asset._id)).toEqual([keep]);
+    expect(detail.featuredAsset).toBeNull();
+    const row = detail.lessons.find(({ lesson: l }) => l._id === lesson.lessonId);
+    expect(row?.attachedAssetIds).toEqual([keep]);
+  });
+
+  test("an asset from another module refuses the whole selection", async () => {
+    const mine = await admin.mutation(api.assets.create, {
+      moduleId,
+      title: "Mine",
+      kind: "document",
+    });
+    const otherModuleId = await t.run(async (ctx) => {
+      const source = await ctx.db.get("modules", moduleId);
+      const { _id, _creationTime, ...rest } = source!;
+      return await ctx.db.insert("modules", { ...rest, slug: "other-fixture", sequence: 99 });
+    });
+    const theirs = await admin.mutation(api.assets.create, {
+      moduleId: otherModuleId,
+      title: "Theirs",
+      kind: "document",
+    });
+
+    await expect(
+      admin.mutation(api.assets.removeMany, { moduleId, assetIds: [mine, theirs] }),
+    ).rejects.toThrow(/CROSS_MODULE|do not all belong/i);
+    const left = await t.run(async (ctx) => await ctx.db.query("assets").collect());
+    expect(left).toHaveLength(2);
+  });
+
+  test("an empty selection is refused", async () => {
+    await expect(admin.mutation(api.assets.removeMany, { moduleId, assetIds: [] })).rejects.toThrow(
+      /INVALID|at least one/i,
+    );
+  });
+});
+
 describe("adding material to a lesson", () => {
   async function lesson(title = "L") {
     return await admin.mutation(api.lessons.create, { moduleId, title, kind: "reading" });

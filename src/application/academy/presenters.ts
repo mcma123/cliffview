@@ -403,6 +403,20 @@ export function presentAdminModuleDetail(data: ModuleDetail, now: number) {
       kind: asset.kind,
       description: asset.description,
       meta: formatAssetMeta(asset),
+      /**
+       * Where the file actually appears, so the list says what deleting it
+       * would take away. Attachments and lesson heroes both count, and so does
+       * the module hero.
+       */
+      usedIn: [
+        ...(module.featuredAssetId === asset._id ? ["Module hero"] : []),
+        ...lessons
+          .filter(
+            ({ lesson, attachedAssetIds }) =>
+              attachedAssetIds.includes(asset._id) || lesson.heroAssetId === asset._id,
+          )
+          .map(({ lesson }) => lesson.title),
+      ],
       publishState: asset.publishState,
       publishLabel: formatPublishState(asset.publishState),
       hasFile: asset.r2Key !== undefined,

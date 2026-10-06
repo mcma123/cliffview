@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
-import { presentAdminModuleDetail } from "@/application/academy/presenters";
+import { getLessonPreviewHref, presentAdminModuleDetail } from "@/application/academy/presenters";
 import { MODULE_CATEGORIES, type ModuleCategory } from "@/domain/academy/entities";
 import { api } from "../../convex/_generated/api";
 import {
@@ -13,12 +13,13 @@ import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  Eye,
   FileText,
-  GripVertical,
   Headphones,
   Plus,
   Settings2,
   Target,
+  Trash2,
   Upload,
   Video,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import { useAssetUploads } from "@/hooks/use-asset-upload";
 import { AddLessonDialog } from "@/components/add-lesson-dialog";
 import { AddObjectiveDialog } from "@/components/add-objective-dialog";
 import { AttachContentDialog } from "@/components/attach-content-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { errorMessage } from "@/lib/convex-error";
 
 export const Route = createFileRoute("/academy/admin/modules/$moduleSlug/")({
@@ -57,8 +59,21 @@ function AdminModuleDetail() {
   const removeObjective = useMutation({ mutationFn: useConvexMutation(api.objectives.remove) });
   const moveLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.move) });
   const createLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.create) });
-  const createAsset = useMutation({ mutationFn: useConvexMutation(api.assets.create) });
   const attachAsset = useMutation({ mutationFn: useConvexMutation(api.lessons.attachAsset) });
+  const removeLesson = useMutation({ mutationFn: useConvexMutation(api.lessons.remove) });
+  const removeAssets = useMutation({ mutationFn: useConvexMutation(api.assets.removeMany) });
+
+  // Ticked resources. Filtered against the live list on every render, so a file
+  // deleted elsewhere drops out of the selection instead of being sent again.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const liveSelection = data.resources.filter((resource) => selected.has(resource.id));
+  const toggleSelected = (id: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   // One instance for the screen, keyed by asset id, because this page renders a
   // zone per asset and a hook call per zone would break the rules of hooks the
   // moment an asset was added or removed.
@@ -519,22 +534,11 @@ function AdminModuleDetail() {
             </AddLessonDialog>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-dashed border-border bg-background px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.25em] text-gold">
-                  Reorder lessons
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Drag styling is visual only for now. Use the move controls as placeholder actions
-                  until persistence is wired up.
-                </p>
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-card px-3 py-1 text-xs font-semibold text-foreground">
-                <GripVertical className="h-4 w-4 text-muted-foreground" /> Drag-and-drop preview
-              </div>
-            </div>
-          </div>
+          {data.lessons.length === 0 ? (
+            <p className="mt-6 rounded-2xl border border-dashed border-border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+              No lessons yet. Use Add lesson to create the first one.
+            </p>
+          ) : null}
 
           <div className="mt-6 space-y-4">
             {data.lessons.map((lesson, index) => (
@@ -558,7 +562,7 @@ function AdminModuleDetail() {
                         <ArrowUp className="h-4 w-4" />
                       </button>
                       <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-border bg-card text-muted-foreground">
-                        <GripVertical className="h-5 w-5" />
+                        <span className="text-sm font-bold tabular-nums">{index + 1}</span>
                       </div>
                       <button
                         className="rounded-xl border border-border bg-card p-2 text-muted-foreground hover:bg-muted"
@@ -585,7 +589,9 @@ function AdminModuleDetail() {
                             Lesson order slot {index + 1}
                           </p>
                           <h3 className="mt-2 text-lg font-semibold text-foreground">
-                            {lesson.title}
+                            <Link to={lesson.href} className="hover:text-primary hover:underline">
+                              {lesson.title}
+                            </Link>
                           </h3>
                           <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
                             {lesson.kind} · {lesson.durationLabel}
@@ -610,21 +616,12 @@ function AdminModuleDetail() {
                       </div>
                     </div>
 
-                    <textarea
-                      defaultValue={lesson.summary}
-                      className="mt-4 min-h-24 w-full rounded-2xl border border-input bg-card px-4 py-3 text-sm outline-none"
-                    />
+                    {/* Read-only here: the summary is edited, and saved, in the lesson editor. */}
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      {lesson.summary.trim().length === 0 ? "No summary yet." : lesson.summary}
+                    </p>
 
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <span className="rounded-full border border-border px-3 py-1">
-                          {lesson.durationLabel}
-                        </span>
-                        <span className="rounded-full border border-border px-3 py-1">
-                          reorder-ready UI
-                        </span>
-                      </div>
-
+                    <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
                       <div className="flex flex-wrap gap-2">
                         <button
                           aria-label={`Move ${lesson.title} up`}
@@ -654,6 +651,19 @@ function AdminModuleDetail() {
                         >
                           Open lesson editor
                         </Link>
+                        {/*
+                          Learners only ever see published lessons, and the
+                          preview shows exactly what they see, so a draft has
+                          nothing to open yet.
+                        */}
+                        {lesson.publishState === "published" ? (
+                          <Link
+                            to={getLessonPreviewHref(moduleSlug, lesson.slug)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                          >
+                            <Eye className="h-4 w-4" /> Open lesson
+                          </Link>
+                        ) : null}
                         <AttachContentDialog
                           lessonTitle={lesson.title}
                           assets={attachableFor(lesson.attachedAssetIds)}
@@ -670,6 +680,36 @@ function AdminModuleDetail() {
                             Attach content
                           </button>
                         </AttachContentDialog>
+                        <ConfirmDialog
+                          icon={Trash2}
+                          title={`Delete ${lesson.title}`}
+                          description="The lesson is removed from this module for good."
+                          body={
+                            <p className="text-sm text-muted-foreground">
+                              Staff progress on this lesson is deleted with it. Files attached to it
+                              stay in the module&rsquo;s resources below, so you can attach them
+                              elsewhere or delete them there.
+                            </p>
+                          }
+                          confirmLabel="Delete lesson"
+                          onConfirm={async () => {
+                            try {
+                              await removeLesson.mutateAsync({ lessonId: lesson.id });
+                              toast.success(`${lesson.title} deleted.`);
+                            } catch (caught) {
+                              toast.error(errorMessage(caught, "Could not delete that lesson."));
+                              // Rethrown so the dialog stays open on a refusal.
+                              throw caught;
+                            }
+                          }}
+                        >
+                          <button
+                            aria-label={`Delete ${lesson.title}`}
+                            className="inline-flex items-center gap-2 rounded-xl border border-destructive/40 px-3 py-2 text-sm font-semibold text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" /> Delete
+                          </button>
+                        </ConfirmDialog>
                       </div>
                     </div>
                   </div>
@@ -716,55 +756,156 @@ function AdminModuleDetail() {
               <h2 className="mt-2 text-2xl font-bold text-foreground">
                 Documents, worksheets, and media
               </h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Every file in this module. Upload new files from a lesson&rsquo;s editor; tick files
+                here to delete them.
+              </p>
             </div>
-            <button
-              onClick={() =>
-                run("Asset placeholder created.", () =>
-                  createAsset.mutateAsync({
-                    moduleId,
-                    title: "Untitled asset",
-                    kind: "document",
-                  }),
-                )
-              }
-              className="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-deep"
-            >
-              Add placeholder asset
-            </button>
+            {data.resources.length === 0 ? null : (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() =>
+                    setSelected(
+                      liveSelection.length === data.resources.length
+                        ? new Set()
+                        : new Set(data.resources.map((resource) => resource.id)),
+                    )
+                  }
+                  className="rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                >
+                  {liveSelection.length === data.resources.length
+                    ? "Clear selection"
+                    : "Select all"}
+                </button>
+                {data.resources.some((resource) => !resource.hasFile) ? (
+                  <button
+                    onClick={() =>
+                      setSelected(
+                        new Set(
+                          data.resources
+                            .filter((resource) => !resource.hasFile)
+                            .map((resource) => resource.id),
+                        ),
+                      )
+                    }
+                    className="rounded-2xl border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
+                  >
+                    Select empty placeholders
+                  </button>
+                ) : null}
+                <ConfirmDialog
+                  icon={Trash2}
+                  title={`Delete ${liveSelection.length} file${liveSelection.length === 1 ? "" : "s"}`}
+                  description="The selected files are deleted for good and removed from every lesson that uses them."
+                  body={
+                    <ul className="max-h-60 list-disc space-y-1 overflow-y-auto pl-5 text-sm text-muted-foreground">
+                      {liveSelection.map((resource) => (
+                        <li key={resource.id}>
+                          <span className="font-medium text-foreground">{resource.title}</span>
+                          {resource.usedIn.length === 0
+                            ? " — not used in any lesson"
+                            : ` — used in ${resource.usedIn.join(", ")}`}
+                        </li>
+                      ))}
+                    </ul>
+                  }
+                  confirmLabel="Delete files"
+                  disabled={liveSelection.length === 0}
+                  onConfirm={async () => {
+                    try {
+                      const { removed } = await removeAssets.mutateAsync({
+                        moduleId,
+                        assetIds: liveSelection.map((resource) => resource.id),
+                      });
+                      setSelected(new Set());
+                      toast.success(`${removed} file${removed === 1 ? "" : "s"} deleted.`);
+                    } catch (caught) {
+                      toast.error(errorMessage(caught, "Could not delete those files."));
+                      // Rethrown so the dialog stays open on a refusal.
+                      throw caught;
+                    }
+                  }}
+                >
+                  <button
+                    disabled={liveSelection.length === 0}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-destructive px-4 py-2 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete selected
+                    {liveSelection.length === 0 ? "" : ` (${liveSelection.length})`}
+                  </button>
+                </ConfirmDialog>
+              </div>
+            )}
           </div>
 
+          {data.resources.length === 0 ? (
+            <p className="mt-6 rounded-2xl border border-dashed border-border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
+              No files yet. Open a lesson editor and drop files onto it to add them here.
+            </p>
+          ) : null}
+
           <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {data.resources.map((resource) => (
-              <div key={resource.id} className="rounded-2xl border border-border bg-background p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{resource.title}</h3>
-                    <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
-                      {resource.kind} · {resource.meta}
-                    </p>
+            {data.resources.map((resource) => {
+              const isSelected = selected.has(resource.id);
+              return (
+                <div
+                  key={resource.id}
+                  className={`rounded-2xl border bg-background p-5 transition-colors ${
+                    isSelected ? "border-destructive ring-1 ring-destructive/40" : "border-border"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelected(resource.id)}
+                      aria-label={`Select ${resource.title}`}
+                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-destructive"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate font-semibold text-foreground">{resource.title}</h3>
+                      <p className="mt-1 truncate text-xs uppercase tracking-widest text-muted-foreground">
+                        {resource.kind} · {resource.meta}
+                      </p>
+                      {resource.fileName === null ? null : (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {resource.fileName}
+                        </p>
+                      )}
+                    </div>
+                    <FileText className="h-5 w-5 shrink-0 text-primary" />
                   </div>
-                  <FileText className="h-5 w-5 text-primary" />
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {resource.usedIn.length === 0
+                      ? "Not used in any lesson"
+                      : `Used in: ${resource.usedIn.join(", ")}`}
+                  </p>
+                  <div className="mt-4 flex items-center justify-between gap-3">
+                    {resource.hasFile ? (
+                      <span
+                        className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                          resource.publishState === "published"
+                            ? "bg-success/15 text-success"
+                            : "bg-gold-soft text-primary-deep"
+                        }`}
+                      >
+                        {resource.publishLabel}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Placeholder · no file
+                      </span>
+                    )}
+                    <Link
+                      to={resource.href}
+                      className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+                    >
+                      Edit <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </div>
                 </div>
-                <p className="mt-3 text-sm text-muted-foreground">{resource.description}</p>
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <span
-                    className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                      resource.publishState === "published"
-                        ? "bg-success/15 text-success"
-                        : "bg-gold-soft text-primary-deep"
-                    }`}
-                  >
-                    {resource.publishLabel}
-                  </span>
-                  <Link
-                    to={resource.href}
-                    className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-                  >
-                    Edit asset <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
