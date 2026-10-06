@@ -24,6 +24,7 @@ import {
 import { hasPasswordAccount } from "./invites";
 import { rekeyPasswordAccount } from "./lib/credentials";
 import { revokeLiveInvites } from "./lib/invites";
+import { removeStaffRecords } from "./lib/staffRemoval";
 import schema from "./schema";
 import { accessRole, employmentStatus } from "./validators";
 
@@ -504,14 +505,11 @@ export const update = mutation({
 /**
  * Deactivate or reinstate a staff member.
  *
- * This is the delete. A `users` row is referenced by enrollments, lesson
- * progress, assessment attempts and the audit log, and it is the identity a
- * Convex Auth account is bound to, so removing it would orphan a person's
- * entire training history and leave a live session pointing at nothing.
- * `employmentStatus: "inactive"` is already the modelled answer:
- * `requireStaff` refuses an inactive account and so does `createOrUpdateUser`,
- * which means deactivation immediately ends access without destroying the
- * record the school may need to produce later.
+ * The everyday "delete", and reversible. `employmentStatus: "inactive"` makes
+ * `requireStaff` and `createOrUpdateUser` refuse the account, so access ends
+ * immediately while the training record the school may need later is kept.
+ * Erasing the person for good is `remove`, which only accepts somebody who has
+ * already been deactivated.
  */
 export const setEmploymentStatus = mutation({
   args: { staffId: v.id("users"), employmentStatus },
@@ -540,6 +538,122 @@ export const setEmploymentStatus = mutation({
     return null;
   },
 });
+
+/** Backstop: a removal that cannot shrink fails loudly instead of running forever. */
+const MAX_REMOVAL_PASSES = 500;
+
+/**
+ * Permanently delete a deactivated staff member.
+ *
+ * Unlike deactivation this cannot be undone: the profile, their login and
+ * sessions, invitations, enrollments, lesson progress, assessment attempts,
+ * badges and activity history all go. The audit log keeps a row saying who
+ * did it — see the header of `lib/staffRemoval.ts` for what else is kept.
+ *
+ * Three gates, all checked before anything is written:
+ *
+ * - **Inactive only.** Deactivating first is the reversible step, and making
+ *   it a precondition means nobody is erased by one mis-click on an active
+ *   colleague.
+ * - **Not yourself.** Already implied by the first — `setEmploymentStatus`
+ *   refuses self-deactivation — but stated, because the cost of being wrong
+ *   here is an admin deleting their own login.
+ * - **`confirm` is the person's email address**, the same idea as
+ *   `modules.remove` using the slug: a constant gates nothing on a public
+ *   mutation, while the address makes the confirmation name *who*.
+ *
+ * Most people fit in one transaction. Somebody with a long history may not —
+ * `progressEvents` and attempts are unbounded — so the remainder is finished
+ * by `removeStep`. Credentials go in the first pass either way, so sign-in is
+ * impossible from the moment this returns.
+ */
+export const remove = mutation({
+  args: { staffId: v.id("users"), confirm: v.string() },
+  returns: v.object({
+    /** False when a scheduled step is finishing the job. */
+    done: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const actor = await requireAdmin(ctx);
+    const user = await staffOrThrow(ctx, args.staffId);
+
+    if (user._id === actor.userId) {
+      throw new ConvexError({
+        code: "FORBIDDEN",
+        message: "You cannot delete your own account.",
+      });
+    }
+    if (user.employmentStatus !== "inactive") {
+      throw new ConvexError({
+        code: "STILL_ACTIVE",
+        message: "Deactivate this account before deleting it permanently.",
+      });
+    }
+    if (args.confirm.trim().toLowerCase() !== user.email) {
+      throw new ConvexError({
+        code: "CONFIRM_REQUIRED",
+        message: `Type ${user.email} to confirm. This permanently deletes the profile and all of their training records.`,
+      });
+    }
+
+    // Written before the cascade, so the decision is on record even if a
+    // later step fails.
+    await recordAudit(ctx, {
+      actor,
+      action: "staff.remove",
+      entityTable: "users",
+      entityId: user._id,
+      summary: `${user.firstName} ${user.lastName} <${user.email}>`,
+    });
+
+    const done = await removeStaffAndRow(ctx, user._id);
+    if (!done) {
+      await ctx.scheduler.runAfter(0, internal.staff.removeStep, {
+        staffId: user._id,
+        passes: 0,
+      });
+    }
+    return { done };
+  },
+});
+
+/**
+ * One transaction's worth of a staff removal, then the next.
+ *
+ * No authorization of its own: `remove` was gated once, and this is
+ * unreachable from any client. A person who is already gone — a second chain,
+ * or a re-run — ends the walk rather than throwing.
+ */
+export const removeStep = internalMutation({
+  args: { staffId: v.id("users"), passes: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.passes > MAX_REMOVAL_PASSES) {
+      throw new ConvexError({
+        code: "STUCK",
+        message: `Removing ${args.staffId} did not finish in ${MAX_REMOVAL_PASSES} passes.`,
+      });
+    }
+    const user = await ctx.db.get("users", args.staffId);
+    if (user === null) return null;
+
+    const done = await removeStaffAndRow(ctx, user._id);
+    if (!done) {
+      await ctx.scheduler.runAfter(0, internal.staff.removeStep, {
+        staffId: user._id,
+        passes: args.passes + 1,
+      });
+    }
+    return null;
+  },
+});
+
+/** Run the cascade, and delete the profile row if that emptied it. */
+async function removeStaffAndRow(ctx: MutationCtx, staffId: Id<"users">): Promise<boolean> {
+  const { done } = await removeStaffRecords(ctx, staffId);
+  if (done) await ctx.db.delete("users", staffId);
+  return done;
+}
 
 // ---------------------------------------------------------------------------
 // Enrollments

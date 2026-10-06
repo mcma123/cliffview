@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Layers,
   Search,
+  Trash2,
   TrendingUp,
   Upload,
   UserPlus,
@@ -19,6 +20,7 @@ import { complianceMeterClass, presentAdminStaffDirectory } from "@/application/
 import staffImportTemplateUrl from "@/assets/cliffview_teacher_import_template.xlsx?url";
 import { AddStaffDialog } from "@/components/add-staff-dialog";
 import { BulkAssignDialog } from "@/components/bulk-assign-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StaffImportDialog, type ImportReport } from "@/components/staff-import-dialog";
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
@@ -60,6 +62,7 @@ function AdminStaffIndexComponent() {
   const createStaff = useMutation({ mutationFn: useConvexMutation(api.staff.create) });
   const assignAll = useMutation({ mutationFn: useConvexMutation(api.staff.assignAllModules) });
   const importStaff = useMutation({ mutationFn: useConvexMutation(api.staff.importStaff) });
+  const removeStaff = useMutation({ mutationFn: useConvexMutation(api.staff.remove) });
   const convex = useConvex();
 
   // Held between the two steps: the preview shows what the server said about
@@ -138,6 +141,25 @@ function AdminStaffIndexComponent() {
       );
     } catch (caught) {
       toast.error(errorMessage(caught, "Could not assign the modules."));
+      // Rethrown so the dialog stays open rather than dismissing on a refusal.
+      throw caught;
+    }
+  }
+
+  async function removePermanently(staffId: Id<"users">, name: string, email: string) {
+    try {
+      const { done } = await removeStaff.mutateAsync({ staffId, confirm: email });
+      toast.success(
+        done ? `${name} was deleted permanently.` : `${name} is being deleted permanently.`,
+        done
+          ? undefined
+          : {
+              description:
+                "A long history is cleared in the background. Sign-in is already blocked.",
+            },
+      );
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not delete that account."));
       // Rethrown so the dialog stays open rather than dismissing on a refusal.
       throw caught;
     }
@@ -294,6 +316,26 @@ function AdminStaffIndexComponent() {
           </article>
         </section>
 
+        {data.summary.inactiveStaff === 0 ? null : (
+          // The reminder. Deactivation is reversible and keeps everything, so
+          // these profiles sit here until somebody decides what to do with them.
+          <div className="flex items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm">
+            <Trash2 className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <p className="text-foreground">
+              <span className="font-semibold">
+                {data.summary.inactiveStaff === 1
+                  ? "1 deactivated account is"
+                  : `${data.summary.inactiveStaff} deactivated accounts are`}{" "}
+                still on the system.
+              </span>{" "}
+              <span className="text-muted-foreground">
+                Use the delete button on an Inactive row to remove them completely, or open the
+                profile to reinstate.
+              </span>
+            </p>
+          </div>
+        )}
+
         <section className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -382,12 +424,40 @@ function AdminStaffIndexComponent() {
                         {staff.lastActiveLabel}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <Link
-                          to={staff.href}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-foreground transition-colors hover:border-gold hover:text-gold"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
+                        <div className="inline-flex items-center gap-2">
+                          {staff.isActive ? null : (
+                            <ConfirmDialog
+                              icon={Trash2}
+                              title={`Delete ${staff.name}`}
+                              description="The profile and every training record attached to it are removed for good."
+                              confirmPhrase={staff.email}
+                              confirmLabel="Delete permanently"
+                              body={
+                                <p className="text-sm text-muted-foreground">
+                                  Their login, enrollments, lesson progress, scores, badges and XP
+                                  are all deleted. This cannot be undone. The audit log keeps a note
+                                  that you deleted them.
+                                </p>
+                              }
+                              onConfirm={() =>
+                                removePermanently(staff.id as Id<"users">, staff.name, staff.email)
+                              }
+                            >
+                              <button
+                                aria-label={`Delete ${staff.name} permanently`}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </ConfirmDialog>
+                          )}
+                          <Link
+                            to={staff.href}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-foreground transition-colors hover:border-gold hover:text-gold"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))

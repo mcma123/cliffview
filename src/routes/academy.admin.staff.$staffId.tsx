@@ -1,6 +1,6 @@
 import { convexQuery, useConvexAction, useConvexMutation } from "@convex-dev/react-query";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   BookOpen,
@@ -10,6 +10,7 @@ import {
   Mail,
   Plus,
   Save,
+  Trash2,
   UserX,
   X,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { complianceMeterClass, presentAdminStaffDetail } from "@/application/aca
 import { AdminShell } from "@/components/admin-shell";
 import { useAdminViewer } from "@/hooks/use-admin-viewer";
 import { AssignModulesDialog } from "@/components/assign-modules-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { errorMessage } from "@/lib/convex-error";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -48,6 +50,8 @@ function AdminStaffDetailComponent() {
   const assignModules = useMutation({ mutationFn: useConvexMutation(api.staff.assignModules) });
   const unassignModule = useMutation({ mutationFn: useConvexMutation(api.staff.unassignModule) });
   const resendInvite = useMutation({ mutationFn: useConvexAction(api.invites.resend) });
+  const removeStaff = useMutation({ mutationFn: useConvexMutation(api.staff.remove) });
+  const navigate = useNavigate();
 
   const [form, setForm] = useState(data.form);
   const [saving, setSaving] = useState(false);
@@ -83,9 +87,45 @@ function AdminStaffDetailComponent() {
     const next = data.isActive ? "inactive" : "active";
     try {
       await setStatus.mutateAsync({ staffId: id, employmentStatus: next });
-      toast.success(next === "active" ? "Account reinstated." : "Account deactivated.");
+      if (next === "active") {
+        toast.success("Account reinstated.");
+      } else {
+        // The reminder: deactivation keeps everything, and the profile stays in
+        // the directory until somebody decides to delete it for good.
+        toast.success("Account deactivated.", {
+          description:
+            "Their profile and training record are still on the system. Use Delete permanently below to remove them completely.",
+          duration: 10000,
+        });
+      }
     } catch (caught) {
       toast.error(errorMessage(caught, "That did not work."));
+    }
+  }
+
+  /**
+   * Leave the page first, then delete.
+   *
+   * This screen holds a live subscription to `staff.detail`, which throws
+   * NOT_FOUND the moment the row is gone — deleting from here would swap the
+   * page for an error before the success toast could show.
+   */
+  async function removePermanently() {
+    const name = data.name;
+    await navigate({ to: "/academy/admin/staff", replace: true });
+    try {
+      const { done } = await removeStaff.mutateAsync({ staffId: id, confirm: data.email });
+      toast.success(
+        done ? `${name} was deleted permanently.` : `${name} is being deleted permanently.`,
+        done
+          ? undefined
+          : {
+              description:
+                "A long history is cleared in the background. Sign-in is already blocked.",
+            },
+      );
+    } catch (caught) {
+      toast.error(errorMessage(caught, "Could not delete that account."));
     }
   }
 
@@ -398,7 +438,7 @@ function AdminStaffDetailComponent() {
               </p>
               <p className="mt-1 max-w-xl text-xs text-muted-foreground">
                 {data.isActive
-                  ? "Ends access immediately and blocks sign-in, but keeps their training record. Profiles are never deleted — enrollments, progress and the audit log all reference them."
+                  ? "Ends access immediately and blocks sign-in, but keeps their training record. Once deactivated, the account can be deleted permanently."
                   : "Restores access. Their password and training history were kept."}
               </p>
             </div>
@@ -413,6 +453,34 @@ function AdminStaffDetailComponent() {
               <UserX className="h-4 w-4" /> {data.isActive ? "Deactivate" : "Reinstate"}
             </button>
           </div>
+
+          {data.isActive ? null : (
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
+              <div>
+                <p className="text-sm font-semibold text-destructive">Delete permanently</p>
+                <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                  This account is deactivated but still on the system. Deleting removes the profile,
+                  their login, enrollments, progress, scores and badges for good. It cannot be
+                  undone — reinstate instead if they may come back.
+                </p>
+              </div>
+              <ConfirmDialog
+                icon={Trash2}
+                title={`Delete ${data.name}`}
+                description="The profile and every training record attached to it are removed for good."
+                // Their own address, not a generic word: a confirmation that
+                // names who cannot be given to the wrong person.
+                confirmPhrase={data.email}
+                confirmLabel="Delete permanently"
+                body={<StaffDeletionImpact stats={data.stats} moduleCount={data.modules.length} />}
+                onConfirm={removePermanently}
+              >
+                <button className="inline-flex items-center gap-2 rounded-2xl bg-destructive px-4 py-2.5 text-sm font-semibold text-white hover:bg-destructive/90">
+                  <Trash2 className="h-4 w-4" /> Delete permanently
+                </button>
+              </ConfirmDialog>
+            </div>
+          )}
         </section>
 
         <section className="space-y-4">
@@ -538,5 +606,27 @@ function AdminStaffDetailComponent() {
         </section>
       </div>
     </AdminShell>
+  );
+}
+
+/** What the delete dialog says will go, from figures the page already has. */
+function StaffDeletionImpact({
+  stats,
+  moduleCount,
+}: {
+  stats: { label: string; value: string }[];
+  moduleCount: number;
+}) {
+  const points = stats.find((stat) => stat.label === "CPTD points")?.value;
+  return (
+    <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+      <li>Their login, sessions and any pending invitation</li>
+      <li>
+        {moduleCount === 1 ? "1 module assignment" : `${moduleCount} module assignments`}, with
+        lesson progress, assessment attempts and scores
+      </li>
+      <li>Badges, XP{points === undefined ? "" : ` and ${points}`} of CPTD history</li>
+      <li>The audit log keeps a note that you deleted them</li>
+    </ul>
   );
 }

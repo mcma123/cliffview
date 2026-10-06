@@ -433,6 +433,197 @@ describe("deactivation is the delete", () => {
   });
 });
 
+describe("permanent removal", () => {
+  /** Deactivate Sam and give them one of every row that names a person. */
+  async function seedHistory(extraEvents = 0) {
+    await admin().mutation(api.staff.setEmploymentStatus, {
+      staffId,
+      employmentStatus: "inactive",
+    });
+    await t.run(async (ctx) => {
+      const lessonId = await ctx.db.insert("lessons", {
+        moduleId,
+        slug: "intro",
+        title: "Intro",
+        summary: "s",
+        kind: "reading",
+        order: 1,
+        publishState: "published",
+        contentUpdatedAt: Date.now(),
+      });
+      await ctx.db.insert("enrollments", {
+        userId: staffId,
+        moduleId,
+        status: "completed",
+        progressPercent: 100,
+        assignedAt: Date.now(),
+      });
+      await ctx.db.insert("lessonProgress", {
+        userId: staffId,
+        lessonId,
+        moduleId,
+        status: "completed",
+        lastViewedAt: Date.now(),
+      });
+      await ctx.db.insert("assessmentAttempts", {
+        userId: staffId,
+        moduleId,
+        scorePercent: 90,
+        passed: true,
+        attemptedAt: Date.now(),
+      });
+      await ctx.db.insert("badgeAwards", { userId: staffId, badgeKey: "first", awardedAt: 1 });
+      for (let i = 0; i <= extraEvents; i++) {
+        await ctx.db.insert("progressEvents", {
+          userId: staffId,
+          moduleId,
+          kind: "lesson_completed",
+          occurredAt: i,
+          monthKey: "2026-10",
+        });
+      }
+      await ctx.db.insert("staffInvites", {
+        userId: staffId,
+        email: "sam.staff@cliffview.example",
+        tokenHash: "h",
+        expiresAt: Date.now(),
+        invitedBy: adminId,
+      });
+      const accountId = await ctx.db.insert("authAccounts", {
+        userId: staffId,
+        provider: "password",
+        providerAccountId: "sam.staff@cliffview.example",
+      });
+      await ctx.db.insert("authVerificationCodes", {
+        accountId,
+        provider: "password",
+        code: "c",
+        expirationTime: Date.now(),
+      });
+      const sessionId = await ctx.db.insert("authSessions", {
+        userId: staffId,
+        expirationTime: Date.now() + 1000,
+      });
+      await ctx.db.insert("authRefreshTokens", {
+        sessionId,
+        expirationTime: Date.now() + 1000,
+      });
+    });
+  }
+
+  /** Every row anywhere that still names Sam. */
+  async function remainingFor(userId: Id<"users">) {
+    return await t.run(async (ctx) => {
+      const sessions = await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", userId))
+        .collect();
+      return {
+        user: await ctx.db.get("users", userId),
+        rows: [
+          ...sessions,
+          ...(await ctx.db.query("authRefreshTokens").collect()),
+          ...(await ctx.db.query("authAccounts").collect()),
+          ...(await ctx.db.query("authVerificationCodes").collect()),
+          ...(await ctx.db.query("staffInvites").collect()),
+          ...(await ctx.db.query("enrollments").collect()),
+          ...(await ctx.db.query("lessonProgress").collect()),
+          ...(await ctx.db.query("assessmentAttempts").collect()),
+          ...(await ctx.db.query("badgeAwards").collect()),
+          ...(await ctx.db.query("progressEvents").collect()),
+        ],
+      };
+    });
+  }
+
+  const confirm = "sam.staff@cliffview.example";
+
+  test("only an active admin may delete, and never themselves", async () => {
+    await seedHistory();
+    await expect(
+      asUser(inactiveAdminId).mutation(api.staff.remove, { staffId, confirm }),
+    ).rejects.toThrow(/FORBIDDEN|not active/i);
+    await expect(
+      asUser(adminId).mutation(api.staff.remove, {
+        staffId: adminId,
+        confirm: "ada.admin@cliffview.example",
+      }),
+    ).rejects.toThrow(/FORBIDDEN|your own account/i);
+  });
+
+  test("an active member cannot be deleted - deactivate first", async () => {
+    await expect(admin().mutation(api.staff.remove, { staffId, confirm })).rejects.toThrow(
+      /STILL_ACTIVE|Deactivate/i,
+    );
+    expect(await t.run(async (ctx) => await ctx.db.get("users", staffId))).not.toBeNull();
+  });
+
+  test("the confirmation must be the person's own email", async () => {
+    await seedHistory();
+    await expect(
+      admin().mutation(api.staff.remove, { staffId, confirm: "ada.admin@cliffview.example" }),
+    ).rejects.toThrow(/CONFIRM_REQUIRED|to confirm/i);
+    expect((await remainingFor(staffId)).user).not.toBeNull();
+  });
+
+  test("removes the profile and every row that names them", async () => {
+    await seedHistory();
+
+    const result = await admin().mutation(api.staff.remove, {
+      staffId,
+      // Case and whitespace forgiven, as the dialog trims.
+      confirm: " Sam.Staff@cliffview.example ",
+    });
+
+    expect(result.done).toBe(true);
+    const left = await remainingFor(staffId);
+    expect(left.user).toBeNull();
+    expect(left.rows).toHaveLength(0);
+
+    // Everyone else is untouched, and the decision is on record.
+    const directory = await admin().query(api.staff.directory, {});
+    expect(directory.staff.map((row) => row.user._id)).not.toContain(staffId);
+    expect(directory.staff).toHaveLength(2);
+    const audit = await t.run(async (ctx) =>
+      ctx.db
+        .query("auditLog")
+        .withIndex("by_entityTable_and_entityId", (q) =>
+          q.eq("entityTable", "users").eq("entityId", staffId),
+        )
+        .collect(),
+    );
+    expect(audit.map((row) => row.action)).toContain("staff.remove");
+  });
+
+  test("a history larger than one step is finished by the scheduler", async () => {
+    await seedHistory(1200);
+
+    const result = await admin().mutation(api.staff.remove, { staffId, confirm });
+    expect(result.done).toBe(false);
+
+    // Sign-in is gone after the first pass even though history remains.
+    const midway = await t.run(async (ctx) => ({
+      accounts: await ctx.db.query("authAccounts").collect(),
+      sessions: await ctx.db.query("authSessions").collect(),
+      user: await ctx.db.get("users", staffId),
+    }));
+    expect(midway.accounts).toHaveLength(0);
+    expect(midway.sessions).toHaveLength(0);
+    expect(midway.user).not.toBeNull();
+
+    vi.useFakeTimers();
+    try {
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const left = await remainingFor(staffId);
+    expect(left.user).toBeNull();
+    expect(left.rows).toHaveLength(0);
+  });
+});
+
 describe("operator accounts are not staff", () => {
   test("the directory omits them and the summary does not count them", async () => {
     const before = await admin().query(api.staff.directory, {});
