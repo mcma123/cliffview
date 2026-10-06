@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { BADGES, currentStreak } from "./lib/awards";
-import { requireStaff } from "./lib/authz";
+import { isAdmin, requireStaff, type Actor } from "./lib/authz";
 import { MAX_ACTIVITY, MAX_ATTEMPTS, MAX_MODULES, MAX_PHASES, MAX_STAFF } from "./lib/counts";
 import { MAX_OPTIONS, MAX_SIBLINGS } from "./lib/ordering";
 import { applyLessonCompletion, publishedLessons } from "./lib/progress";
@@ -76,6 +76,39 @@ async function assignedModuleOrThrow(
       message: "This module is not assigned to you.",
     });
   }
+  return { module, enrollment };
+}
+
+/**
+ * Resolve a module for reading: the caller's own, or an admin's preview.
+ *
+ * "Preview learner side" in the module editor lands an admin on these screens
+ * for a module they were never assigned, and `assignedModuleOrThrow` refused
+ * them. An admin may already read every module through `modules.ts`, so letting
+ * them see it laid out as a learner would discloses nothing new — drafts
+ * included, since previewing before publishing is the point.
+ *
+ * `enrollment` is null exactly when this is a preview. An admin who *is*
+ * assigned the module gets the ordinary learner view, with their own progress.
+ * Writes keep using `assignedModuleOrThrow`, so a preview can never create
+ * progress, attempts, XP or CPTD points.
+ */
+async function readableModuleOrThrow(
+  ctx: QueryCtx,
+  actor: Actor,
+  slug: string,
+): Promise<{ module: Doc<"modules">; enrollment: Doc<"enrollments"> | null }> {
+  if (!isAdmin(actor.user)) return await assignedModuleOrThrow(ctx, actor.userId, slug);
+
+  const module = await ctx.db
+    .query("modules")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (module === null) {
+    throw new ConvexError({ code: "NOT_FOUND", message: "That module does not exist." });
+  }
+  const enrollment =
+    module.publishState === "published" ? await enrollmentFor(ctx, actor.userId, module._id) : null;
   return { module, enrollment };
 }
 
@@ -170,7 +203,9 @@ export const moduleDetail = query({
   args: { slug: v.string() },
   returns: v.object({
     module: schema.doc("modules"),
-    enrollment: schema.doc("enrollments"),
+    /** Null when an admin is previewing a module they are not assigned. */
+    enrollment: v.union(schema.doc("enrollments"), v.null()),
+    preview: v.boolean(),
     /** The module hero. Null when unset or when no file is attached to it. */
     featured: v.union(
       v.object({ asset: schema.doc("assets"), url: v.union(v.string(), v.null()) }),
@@ -186,8 +221,9 @@ export const moduleDetail = query({
     ),
   }),
   handler: async (ctx, args) => {
-    const { userId } = await requireStaff(ctx);
-    const { module, enrollment } = await assignedModuleOrThrow(ctx, userId, args.slug);
+    const actor = await requireStaff(ctx);
+    const { userId } = actor;
+    const { module, enrollment } = await readableModuleOrThrow(ctx, actor, args.slug);
 
     const objectives = await ctx.db
       .query("moduleObjectives")
@@ -229,7 +265,7 @@ export const moduleDetail = query({
       }
     }
 
-    return { module, enrollment, featured, objectives, lessons };
+    return { module, enrollment, preview: enrollment === null, featured, objectives, lessons };
   },
 });
 
@@ -275,10 +311,13 @@ export const lesson = query({
     nextSlug: v.union(v.string(), v.null()),
     position: v.number(),
     total: v.number(),
+    /** True when an admin is previewing; the page then records nothing. */
+    preview: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    const { userId } = await requireStaff(ctx);
-    const { module } = await assignedModuleOrThrow(ctx, userId, args.moduleSlug);
+    const actor = await requireStaff(ctx);
+    const { userId } = actor;
+    const { module, enrollment } = await readableModuleOrThrow(ctx, actor, args.moduleSlug);
 
     const lessons = await publishedLessons(ctx, module._id);
     const index = lessons.findIndex((row) => row.slug === args.lessonSlug);
@@ -345,6 +384,7 @@ export const lesson = query({
       nextSlug: index < lessons.length - 1 ? lessons[index + 1].slug : null,
       position: index + 1,
       total: lessons.length,
+      preview: enrollment === null,
     };
   },
 });
@@ -398,8 +438,9 @@ export const assessment = query({
     attemptCount: v.number(),
   }),
   handler: async (ctx, args) => {
-    const { userId } = await requireStaff(ctx);
-    const { module, enrollment } = await assignedModuleOrThrow(ctx, userId, args.moduleSlug);
+    const actor = await requireStaff(ctx);
+    const { userId } = actor;
+    const { module, enrollment } = await readableModuleOrThrow(ctx, actor, args.moduleSlug);
 
     const lessons = await publishedLessons(ctx, module._id);
     const lesson = lessons.find((row) => row.slug === args.lessonSlug);
@@ -466,7 +507,7 @@ export const assessment = query({
       passMark: module.passMark,
       // Read from the enrollment rather than recomputed over the attempts, so
       // it cannot disagree with the number the profile ledger already shows.
-      bestScorePercent: enrollment.score ?? null,
+      bestScorePercent: enrollment?.score ?? null,
       lastAttempt,
       attemptCount: attempts.length,
     };
@@ -593,8 +634,9 @@ export const submitAssessment = mutation({
     badgesAwarded: v.array(v.string()),
   }),
   handler: async (ctx, args) => {
-    const { user, userId } = await requireStaff(ctx);
-    const { module, enrollment } = await assignedModuleOrThrow(ctx, userId, args.moduleSlug);
+    const actor = await requireStaff(ctx);
+    const { user, userId } = actor;
+    const { module, enrollment } = await readableModuleOrThrow(ctx, actor, args.moduleSlug);
 
     const lessons = await publishedLessons(ctx, module._id);
     const lesson = lessons.find((row) => row.slug === args.lessonSlug);
@@ -643,6 +685,25 @@ export const submitAssessment = mutation({
 
     const scorePercent = Math.round((correctCount / questions.length) * 100);
     const passed = scorePercent >= module.passMark;
+
+    // An admin previewing sees the same marking a teacher would, and nothing
+    // is written: no attempt, no progress, no XP or CPTD points.
+    if (enrollment === null) {
+      return {
+        scorePercent,
+        passMark: module.passMark,
+        passed,
+        correctCount,
+        totalCount: questions.length,
+        results,
+        bestScorePercent: scorePercent,
+        progressPercent: 0,
+        moduleCompleted: false,
+        xpAwarded: 0,
+        cptdAwarded: 0,
+        badgesAwarded: [],
+      };
+    }
 
     // Every transition captured before anything is written, which is the
     // contract `applyLessonCompletion` depends on.

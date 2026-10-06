@@ -39,6 +39,11 @@ export async function getActor(ctx: QueryCtx | MutationCtx): Promise<Actor | nul
   return { userId, user };
 }
 
+/** Whether a profile may use the admin console. Not a gate on its own. */
+export function isAdmin(user: Doc<"users">): boolean {
+  return ADMIN_ROLES.has(user.accessRole);
+}
+
 /** Any active staff member. Throws otherwise. */
 export async function requireStaff(ctx: QueryCtx | MutationCtx): Promise<Actor> {
   const actor = await getActor(ctx);

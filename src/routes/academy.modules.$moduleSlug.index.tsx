@@ -17,6 +17,8 @@ import {
 import { presentLearnerModuleDetail } from "@/application/academy/presenters";
 import { LessonMaterial } from "@/components/lesson-material";
 import { PageNotice } from "@/components/page-notice";
+import { PreviewBanner } from "@/components/preview-banner";
+import { errorMessage } from "@/lib/convex-error";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
 import { api } from "../../convex/_generated/api";
@@ -81,11 +83,9 @@ function ModuleOverview() {
       <StaffShell {...shell}>
         <PageNotice
           title="We could not open this module"
-          body={
-            error instanceof Error
-              ? error.message.replace(/^\[.*?\]\s*/, "")
-              : "Ask an administrator to check it is assigned to you."
-          }
+          // `errorMessage`, not `error.message`: a refusal's sentence lives in
+          // `ConvexError.data`, and `.message` is just "Server Error".
+          body={errorMessage(error, "Ask an administrator to check it is assigned to you.")}
           action={{ label: "Back to my modules", to: "/academy/modules" }}
         />
       </StaffShell>
@@ -98,12 +98,16 @@ function ModuleOverview() {
   return (
     <StaffShell {...shell}>
       <div className="mx-auto max-w-5xl space-y-8">
-        <Link
-          to="/academy/modules"
-          className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-gold"
-        >
-          <ArrowLeft className="h-4 w-4" /> My modules
-        </Link>
+        {module.preview ? (
+          <PreviewBanner adminHref={module.adminHref} />
+        ) : (
+          <Link
+            to="/academy/modules"
+            className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-gold"
+          >
+            <ArrowLeft className="h-4 w-4" /> My modules
+          </Link>
+        )}
 
         <header className="rounded-3xl border border-border bg-card p-8 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-gold">

@@ -22,6 +22,7 @@ import {
 import { AssessmentRunner, type RunnerResult } from "@/components/assessment-runner";
 import { LessonMaterial } from "@/components/lesson-material";
 import { PageNotice } from "@/components/page-notice";
+import { PreviewBanner } from "@/components/preview-banner";
 import { StaffShell } from "@/components/staff-shell";
 import { useStaffViewer } from "@/hooks/use-staff-viewer";
 import { errorMessage } from "@/lib/convex-error";
@@ -71,7 +72,8 @@ function LessonPage() {
   // starts the module and stamps `lastAccessedAt`. Fired once per lesson, not
   // on every render, or it would rewrite the row on each repaint.
   const marked = useRef<string | null>(null);
-  const ready = gate.status === "ready" && data !== undefined;
+  // An admin preview records nothing; the server would refuse it anyway.
+  const ready = gate.status === "ready" && data !== undefined && !data.preview;
   useEffect(() => {
     const key = `${moduleSlug}/${lessonId}`;
     if (!ready || marked.current === key) return;
@@ -141,6 +143,15 @@ function LessonPage() {
   }
 
   async function complete() {
+    if (lesson.preview) {
+      if (nextSlug !== null) {
+        await navigate({
+          to: "/academy/modules/$moduleSlug/lesson/$lessonId",
+          params: { moduleSlug, lessonId: nextSlug },
+        });
+      }
+      return;
+    }
     try {
       const result = await record.mutateAsync({
         moduleSlug,
@@ -166,6 +177,7 @@ function LessonPage() {
   return (
     <StaffShell {...shell}>
       <div className="mx-auto max-w-4xl space-y-6">
+        {lesson.preview ? <PreviewBanner adminHref={lesson.adminHref} /> : null}
         <Link
           to="/academy/modules/$moduleSlug"
           params={{ moduleSlug }}
@@ -204,9 +216,7 @@ function LessonPage() {
             <p className="text-sm text-muted-foreground">
               {quiz.error === null
                 ? "Loading the questions…"
-                : quiz.error instanceof Error
-                  ? quiz.error.message.replace(/^\[.*?\]\s*/, "")
-                  : "We could not load this assessment."}
+                : errorMessage(quiz.error, "We could not load this assessment.")}
             </p>
           </section>
         )}
@@ -291,13 +301,17 @@ function LessonPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-deep disabled:opacity-60"
             >
               <CheckCircle2 className="h-4 w-4" />
-              {lesson.isComplete
-                ? "Completed"
-                : record.isPending
-                  ? "Saving…"
-                  : lesson.nextHref === null
-                    ? "Mark complete"
-                    : "Complete and continue"}
+              {lesson.preview
+                ? lesson.nextHref === null
+                  ? "End of module"
+                  : "Next lesson"
+                : lesson.isComplete
+                  ? "Completed"
+                  : record.isPending
+                    ? "Saving…"
+                    : lesson.nextHref === null
+                      ? "Mark complete"
+                      : "Complete and continue"}
               {lesson.nextHref === null ? null : <ArrowRight className="h-4 w-4" />}
             </button>
           )}

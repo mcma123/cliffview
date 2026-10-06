@@ -820,10 +820,14 @@ export function presentLearnerModuleDetail(data: LearnerModuleDetail, now: numbe
     cptdPoints: module.cptdPoints,
     passMark: module.passMark,
     format: module.format,
-    statusLabel: ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status,
-    progressPercent: enrollment.progressPercent,
+    // An admin previewing has no enrollment, so they see a fresh learner's view.
+    preview: data.preview,
+    adminHref: getAdminModuleHref(module.slug),
+    statusLabel:
+      enrollment === null ? "Preview" : (ENROLLMENT_LABELS[enrollment.status] ?? enrollment.status),
+    progressPercent: enrollment?.progressPercent ?? 0,
     lastAccessedLabel:
-      enrollment.lastAccessedAt === undefined
+      enrollment?.lastAccessedAt === undefined
         ? "Not opened yet"
         : formatRelativeTime(enrollment.lastAccessedAt, now),
     objectives: data.objectives.map((objective) => ({
@@ -908,6 +912,8 @@ export function presentLearnerLesson(data: LearnerLesson) {
     moduleSlug: module.slug,
     moduleTitle: module.title,
     moduleHref: getModulePreviewHref(module.slug),
+    preview: data.preview,
+    adminHref: getAdminModuleHref(module.slug),
     title: lesson.title,
     summary: lesson.summary,
     kind: lesson.kind,

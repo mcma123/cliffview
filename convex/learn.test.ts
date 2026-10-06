@@ -202,6 +202,48 @@ describe("only what you were assigned", () => {
   });
 });
 
+describe("an admin can preview the learner side", () => {
+  const operator = () => asUser(operatorId);
+
+  test("an unassigned module opens as a preview, drafts included", async () => {
+    const detail = await operator().query(api.learn.moduleDetail, { slug: MODULE_SLUG });
+    expect(detail.preview).toBe(true);
+    expect(detail.enrollment).toBeNull();
+    expect(detail.lessons).toHaveLength(2);
+
+    const lesson = await operator().query(api.learn.lesson, {
+      moduleSlug: MODULE_SLUG,
+      lessonSlug: "why-this-matters",
+    });
+    expect(lesson.preview).toBe(true);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch("modules", moduleId, { publishState: "draft" });
+    });
+    const draft = await operator().query(api.learn.moduleDetail, { slug: MODULE_SLUG });
+    expect(draft.preview).toBe(true);
+  });
+
+  test("a preview records nothing", async () => {
+    await expect(
+      operator().mutation(api.learn.recordLessonProgress, {
+        moduleSlug: MODULE_SLUG,
+        lessonSlug: "why-this-matters",
+        completed: true,
+      }),
+    ).rejects.toThrow(/NOT_ASSIGNED|not assigned to you/i);
+    const progress = await t.run(async (ctx) => await ctx.db.query("lessonProgress").collect());
+    expect(progress).toHaveLength(0);
+    expect((await userRow(operatorId))?.cptdPoints).toBe(0);
+  });
+
+  test("a teacher's own view is not a preview", async () => {
+    const detail = await teacher().query(api.learn.moduleDetail, { slug: MODULE_SLUG });
+    expect(detail.preview).toBe(false);
+    expect(detail.enrollment).not.toBeNull();
+  });
+});
+
 describe("awards are paid exactly once", () => {
   test("finishing a lesson pays lesson XP and nothing else", async () => {
     const result = await complete("why-this-matters");
