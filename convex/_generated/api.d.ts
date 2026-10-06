@@ -39,6 +39,7 @@ import type * as lib_ordering from "../lib/ordering.js";
 import type * as lib_progress from "../lib/progress.js";
 import type * as lib_questions from "../lib/questions.js";
 import type * as lib_staffImport from "../lib/staffImport.js";
+import type * as lib_staffRemoval from "../lib/staffRemoval.js";
 import type * as lib_storage from "../lib/storage.js";
 import type * as lib_time from "../lib/time.js";
 import type * as modules from "../modules.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   "lib/progress": typeof lib_progress;
   "lib/questions": typeof lib_questions;
   "lib/staffImport": typeof lib_staffImport;
+  "lib/staffRemoval": typeof lib_staffRemoval;
   "lib/storage": typeof lib_storage;
   "lib/time": typeof lib_time;
   modules: typeof modules;
